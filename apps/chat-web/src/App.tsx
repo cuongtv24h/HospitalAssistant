@@ -4,9 +4,10 @@ import { AppointmentFlow, type AppointmentBookingResponse, type AppointmentStatu
 import { EmergencyBanner, type EmergencySafetyResponse } from './features/emergency-safety/EmergencyBanner'
 import { InformationResponse, type InformationAssistanceResponse } from './features/information-assistance/InformationResponse'
 import { ChatClient, ChatClientError, type ChatCapability, type CapabilityResponseEnvelope, type FoundationPage } from './shared/ChatClient'
+import { createClientUuid } from './shared/clientId'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
-const sessionId = `web-${crypto.randomUUID()}`
+const sessionId = `web-${createClientUuid()}`
 
 type Specialty = { specialty_id: string; name: string; description?: string }
 type Doctor = { doctor_id: string; full_name: string; title: string; profile_summary?: string }
@@ -74,14 +75,14 @@ function App() {
       .finally(() => setReferenceLoading(false))
   }, [booking.doctor_id, client])
 
-  function addUser(text: string) { setMessages((current) => [...current, { id: crypto.randomUUID(), side: 'user', text }]) }
-  function addEnvelope(envelope: CapabilityResponseEnvelope) { setMessages((current) => [...current, { id: crypto.randomUUID(), side: 'assistant', envelope }]) }
+  function addUser(text: string) { setMessages((current) => [...current, { id: createClientUuid(), side: 'user', text }]) }
+  function addEnvelope(envelope: CapabilityResponseEnvelope) { setMessages((current) => [...current, { id: createClientUuid(), side: 'assistant', envelope }]) }
 
   async function execute(capability: ChatCapability, text: string, extra: Record<string, unknown> = {}) {
     setLoading(true); setError(null); addUser(text || 'Yêu cầu hỗ trợ')
     const payload = capability === 'appointment_status'
-      ? { request_id: crypto.randomUUID(), session_id: sessionId, appointment_reference: { appointment_id: text.trim() }, ...extra }
-      : { request_id: crypto.randomUUID(), session_id: sessionId, message: text, ...extra }
+      ? { request_id: createClientUuid(), session_id: sessionId, appointment_reference: { appointment_id: text.trim() }, ...extra }
+      : { request_id: createClientUuid(), session_id: sessionId, message: text, ...extra }
     try {
       if (capability === 'information_assistance') {
         await client.sendStream({ capability, payload, context }, (event, envelope) => { if (event === 'completed') addEnvelope(envelope) })
@@ -99,14 +100,14 @@ function App() {
   }
 
   async function submitBooking(confirmed = false) {
-    const key = bookingIdempotencyKey ?? crypto.randomUUID()
+    const key = bookingIdempotencyKey ?? createClientUuid()
     setBookingIdempotencyKey(key)
     const label = confirmed ? 'Xác nhận đặt lịch' : 'Kiểm tra thông tin đặt lịch'
     setLoading(true); setError(null); addUser(label)
     try {
       const envelope = await client.send({
         capability: 'appointment_booking', context, idempotencyKey: confirmed ? key : undefined,
-        payload: { request_id: crypto.randomUUID(), session_id: sessionId, message: confirmed ? 'confirm' : '', form_data: { ...booking, confirmed, idempotency_key: key } },
+        payload: { request_id: createClientUuid(), session_id: sessionId, message: confirmed ? 'confirm' : '', form_data: { ...booking, confirmed, idempotency_key: key } },
       })
       addEnvelope(envelope)
       if ((envelope.result as Record<string, unknown>).outcome === 'created') { setBookingIdempotencyKey(null); setMode('chat') }
