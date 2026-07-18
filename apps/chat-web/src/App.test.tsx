@@ -1,13 +1,18 @@
 // === TASK:WP-500:START ===
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import App from './App'
+import { BrowserSpeechRecognitionProvider } from './speech/SpeechRecognitionProvider'
 
 afterEach(() => vi.unstubAllGlobals())
 
+function renderApp() {
+  return render(<BrowserSpeechRecognitionProvider><App /></BrowserSpeechRecognitionProvider>)
+}
+
 describe('App conversational experience', () => {
   it('welcomes the visitor and presents JTBD quick actions', () => {
-    render(<App />)
+    renderApp()
     expect(screen.getByRole('heading', { name: /trợ lý bệnh viện/i })).toBeInTheDocument()
     expect(screen.getByText(/tôi có thể hỗ trợ bạn/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /giá dịch vụ/i })).toBeInTheDocument()
@@ -24,7 +29,7 @@ describe('App conversational experience', () => {
       return new Response('{}', { status: 404 })
     })
     vi.stubGlobal('fetch', fetcher)
-    render(<App />)
+    renderApp()
 
     fireEvent.click(screen.getByRole('button', { name: /đặt lịch khám/i }))
     await waitFor(() => expect(screen.getByRole('button', { name: /tim mạch/i })).toBeInTheDocument())
@@ -34,6 +39,34 @@ describe('App conversational experience', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /09:00/i })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /09:00/i }))
     expect(screen.getByRole('heading', { name: /thông tin người khám/i })).toBeInTheDocument()
+  })
+
+  it('dictates recognized speech into the chat input', async () => {
+    const instances: Array<{ lang: string; onstart: (() => void) | null; onresult: ((event: { resultIndex: number; results: Array<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null; start: () => void; stop: () => void; abort: () => void }> = []
+    class MockSpeechRecognition {
+      lang = ''
+      continuous = true
+      interimResults = true
+      maxAlternatives = 0
+      onstart: (() => void) | null = null
+      onend: (() => void) | null = null
+      onresult: ((event: { resultIndex: number; results: Array<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null = null
+      onerror: (() => void) | null = null
+      constructor() { instances.push(this) }
+      start() { this.onstart?.() }
+      stop() { this.onend?.() }
+      abort() { this.onend?.() }
+    }
+    vi.stubGlobal('webkitSpeechRecognition', MockSpeechRecognition)
+    renderApp()
+
+    fireEvent.click(screen.getByRole('button', { name: /nhập bằng giọng nói/i }))
+    const recognition = instances[0]
+    expect(recognition.lang).toBe('vi-VN')
+    expect(screen.getByText(/đang nghe/i)).toBeInTheDocument()
+    act(() => recognition.onresult?.({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: ' Tôi cần khám tim mạch ' } }] }))
+
+    await waitFor(() => expect(screen.getByLabelText(/nội dung/i)).toHaveValue('Tôi cần khám tim mạch'))
   })
 })
 // === TASK:WP-500:END ===

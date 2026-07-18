@@ -5,6 +5,7 @@ import { EmergencyBanner, type EmergencySafetyResponse } from './features/emerge
 import { InformationResponse, type InformationAssistanceResponse } from './features/information-assistance/InformationResponse'
 import { ChatClient, ChatClientError, type ChatCapability, type CapabilityResponseEnvelope, type FoundationPage } from './shared/ChatClient'
 import { createClientUuid } from './shared/clientId'
+import { MicrophoneButton } from './speech/MicrophoneButton'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 const sessionId = `web-${createClientUuid()}`
@@ -122,6 +123,10 @@ function App() {
     void execute(action.id === 'emergency' ? 'emergency_safety' : 'information_assistance', action.prompt)
   }
 
+  function appendDictatedText(text: string) {
+    setInput((current) => current.trim() ? `${current.trimEnd()} ${text}` : text)
+  }
+
   function renderEnvelope(envelope: CapabilityResponseEnvelope) {
     const data = envelope.result as Record<string, unknown>
     if (envelope.capability === 'information_assistance') return <InformationResponse response={data as unknown as InformationAssistanceResponse} />
@@ -146,7 +151,7 @@ function App() {
         {loading ? <div className="typing"><i /><i /><i /> Đang xử lý yêu cầu…</div> : null}
         {error ? <p className="error" role="alert">{error}</p> : null}<div ref={endRef} />
       </section>
-      <footer className="composer"><form onSubmit={submitChat}><textarea aria-label="Nội dung" placeholder="Nhập câu hỏi của bạn…" value={input} onChange={(e) => setInput(e.target.value)} disabled={loading || mode !== 'chat'} /><button aria-label="Gửi" disabled={!input.trim() || loading || mode !== 'chat'}>↑</button></form><p>Thông tin chỉ mang tính tham khảo, không thay thế tư vấn y tế trực tiếp.</p></footer>
+      <footer className="composer"><form onSubmit={submitChat}><textarea aria-label="Nội dung" placeholder="Nhập câu hỏi của bạn…" value={input} onChange={(e) => setInput(e.target.value)} disabled={loading || mode !== 'chat'} /><MicrophoneButton disabled={loading || mode !== 'chat'} onTranscript={appendDictatedText} /><button aria-label="Gửi" disabled={!input.trim() || loading || mode !== 'chat'}>↑</button></form><p>Thông tin chỉ mang tính tham khảo, không thay thế tư vấn y tế trực tiếp.</p></footer>
     </section>
   </main>
 }
