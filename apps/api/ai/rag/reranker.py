@@ -84,13 +84,14 @@ def rerank_candidates(
     if not candidates:
         return [], True, None
 
-    provider = (provider or os.environ.get("RERANKER_PROVIDER", "bge")).lower()
+    provider = (provider or os.environ.get("RERANKER_PROVIDER", "jina")).lower()
     if provider == "bge":
-        return _rerank_with_bge(query, candidates, model or BGE_DEFAULT_MODEL, top_n, trace_id)
+        resolved_model = model or os.environ.get("RERANKER_BGE_MODEL") or os.environ.get("RERANKER_MODEL") or BGE_DEFAULT_MODEL
+        return _rerank_with_bge(query, candidates, resolved_model, top_n, trace_id)
     if provider != "jina":
         return candidates[:top_n], False, f"Unsupported reranker provider: {provider}"
 
-    model = model or JINA_DEFAULT_MODEL
+    model = model or os.environ.get("RERANKER_JINA_MODEL") or os.environ.get("RERANKER_MODEL") or JINA_DEFAULT_MODEL
         
     api_key = api_key or os.environ.get("JINA_API_KEY")
     if not api_key:

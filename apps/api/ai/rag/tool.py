@@ -88,7 +88,7 @@ def search_hospital_information(
     reranker_enabled = os.environ.get("RERANKER_ENABLED", "true").lower() == "true"
     if fused_cands and reranker_enabled:
         rerank_started = time.monotonic()
-        trace_event("rag.rerank.start", trace_id=trace_id, provider=os.environ.get("RERANKER_PROVIDER", "bge"), candidate_count=min(len(fused_cands), 20))
+        trace_event("rag.rerank.start", trace_id=trace_id, provider=os.environ.get("RERANKER_PROVIDER", "jina"), candidate_count=min(len(fused_cands), 20))
         reranked, reranker_applied, rerank_error = rerank_candidates(
             query=query,
             candidates=fused_cands[:20],
@@ -97,7 +97,7 @@ def search_hospital_information(
             base_url=reranker_base_url,
             timeout=reranker_timeout,
             top_n=top_n,
-            provider=os.environ.get("RERANKER_PROVIDER", "bge"),
+            provider=os.environ.get("RERANKER_PROVIDER", "jina"),
             trace_id=trace_id,
         )
         if reranker_applied:

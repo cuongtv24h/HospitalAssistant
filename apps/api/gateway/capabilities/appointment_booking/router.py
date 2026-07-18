@@ -22,12 +22,16 @@ from apps.api.core.runtime_persistence import (
     append_user_turn,
     get_operational_runtime,
     write_audit,
+    write_booking_audit,
 )
 from apps.api.ai.orchestrator.appointment_booking.pipeline import (
     AppointmentBookingPipeline,
     AppointmentBookingRequest,
     BookingOutcome,
 )
+from packages.contracts import BookingFlowStateDTO
+from apps.api.core.settings import Settings
+import logging
 
 CAPABILITY_NAME = "appointment_booking"
 CAPABILITY_ROUTE = "/v1/capabilities/appointment-booking:execute"
@@ -157,6 +161,14 @@ async def execute_appointment_booking(
     request: Request,
 ):
     """Execute the PC-03 Appointment Booking capability."""
+    # 5.4 respect enable_agentic_booking configuration
+    settings = Settings()
+    if not settings.enable_agentic_booking:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agentic appointment booking is disabled."
+        )
+
     trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
     idempotency_key = request.headers.get("idempotency-key")
     if is_create_confirmation_attempt(payload) and not idempotency_key:
@@ -164,22 +176,84 @@ async def execute_appointment_booking(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Idempotency-Key header is required for appointment create confirmation",
         )
+    if is_create_confirmation_attempt(payload):
+        expected_version = payload.form_data.get("expected_version")
+        expected_fingerprint = payload.form_data.get("confirmation_fingerprint")
+        if not isinstance(expected_version, int) or not isinstance(expected_fingerprint, str) or not expected_fingerprint:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Current booking version and confirmation fingerprint are required; reload the summary.",
+            )
     if idempotency_key:
         payload.form_data.setdefault("idempotency_key", idempotency_key)
 
     runtime = get_operational_runtime(request)
     append_user_turn(runtime, payload.session_id, payload.message or "appointment booking request", client_context=payload.client_context, intent=CAPABILITY_NAME)
+
+    # 5.3 Fallback to Mock HIS whenever the Supabase database is unavailable.
+    state = None
+    if runtime is not None:
+        try:
+            state = runtime.sessions.load_booking_draft(payload.session_id)
+        except Exception:
+            logging.getLogger(__name__).warning("Supabase database unavailable; falling back to in-memory draft")
+
+    if not state:
+        state = BookingFlowStateDTO(
+            session_id=payload.session_id,
+            flow_id=f"flow-{uuid.uuid4()}",
+            version=0,
+            status="collecting",
+            current_step="visit_type"
+        )
+
+    # Convert request and pass state
+    pipeline_request = payload.to_pipeline_request()
+    pipeline_request = AppointmentBookingRequest(
+        request_id=pipeline_request.request_id,
+        session_id=pipeline_request.session_id,
+        message=pipeline_request.message,
+        state=state,
+        form_data=pipeline_request.form_data
+    )
+
     create_attempt = is_create_confirmation_attempt(payload)
     if create_attempt:
-        write_audit(runtime, "security", payload.session_id, "appointment_create_attempt", "appointment", details={"capability": CAPABILITY_NAME, "idempotency_key_present": bool(idempotency_key)})
+        write_booking_audit(runtime, "security", payload.session_id, "appointment_create_attempt", "appointment", details={"capability": CAPABILITY_NAME, "idempotency_key_present": bool(idempotency_key)})
 
     try:
-        pipeline_response = _default_pipeline.execute(payload.to_pipeline_request())
+        pipeline_response = _default_pipeline.execute(pipeline_request)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+
+    # Save session state with database fallback
+    if runtime is not None:
+        try:
+            if pipeline_response.outcome == "created" and pipeline_response.appointment:
+                appt_id = pipeline_response.appointment.get("appointment_id", "")
+                runtime.sessions.close_booking_draft(payload.session_id, appt_id)
+            elif pipeline_response.conversation_state.status == "cancelled":
+                runtime.sessions.clear_booking_draft(payload.session_id)
+            elif state.flow_id and state.version >= 0:
+                saved = runtime.sessions.update_booking_draft_cas(
+                    payload.session_id,
+                    pipeline_response.conversation_state,
+                    expected_version=state.version,
+                )
+                if not saved:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Booking draft was updated by another request; reload and retry.",
+                    )
+            else:
+                runtime.sessions.create_booking_draft(payload.session_id, pipeline_response.conversation_state)
+        except HTTPException:
+            raise
+        except Exception:
+            logging.getLogger(__name__).warning("Failed to persist booking draft state to database")
 
     envelope = build_capability_response_envelope(
         pipeline_response=pipeline_response,
@@ -188,7 +262,7 @@ async def execute_appointment_booking(
     )
     if create_attempt:
         outcome = "success" if envelope.get("result", {}).get("appointment") else "failure"
-        write_audit(runtime, "security", payload.session_id, f"appointment_create_{outcome}", "appointment", details={"capability": CAPABILITY_NAME, "idempotency_key_present": bool(idempotency_key)}, outcome=outcome)
+        write_booking_audit(runtime, "security", payload.session_id, f"appointment_create_{outcome}", "appointment", details={"capability": CAPABILITY_NAME, "idempotency_key_present": bool(idempotency_key)}, outcome=outcome)
     append_assistant_turn(runtime, payload.session_id, CAPABILITY_NAME, envelope, tools=[{"name": "appointment_tools"}])
 
     if payload.response_mode == "stream":
@@ -199,6 +273,35 @@ async def execute_appointment_booking(
         )
 
     return JSONResponse(content=envelope, headers={"x-trace-id": trace_id})
+
+
+@router.get("/v1/capabilities/appointment-booking/session/{session_id}")
+async def get_booking_session_state(session_id: str, request: Request):
+    """Retrieve the current active booking draft for the session to resume in UI (6.1)."""
+    runtime = get_operational_runtime(request)
+    state = None
+    if runtime is not None:
+        try:
+            state = runtime.sessions.load_booking_draft(session_id)
+        except Exception:
+            logging.getLogger(__name__).warning("Supabase database unavailable; fallback to None state")
+
+    if not state:
+        state = BookingFlowStateDTO(
+            session_id=session_id,
+            flow_id=f"flow-{uuid.uuid4()}",
+            version=0,
+            status="collecting",
+            current_step="visit_type"
+        )
+
+    return JSONResponse(
+        content={
+            "session_id": session_id,
+            "conversation_state": state.to_dict()
+        },
+        headers={"x-trace-id": request.headers.get("x-trace-id") or str(uuid.uuid4())}
+    )
 
 
 __all__ = [

@@ -131,13 +131,13 @@ def main():
 
             # 4. Reranking (optional)
             if fused and os.environ.get("RERANKER_ENABLED", "true").lower() == "true":
-                provider = os.environ.get("RERANKER_PROVIDER", "bge")
+                provider = os.environ.get("RERANKER_PROVIDER", "jina")
                 print(f"\n-> Đang chạy {provider.upper()} Reranker...")
                 reranked, applied, err = rerank_candidates(
                     query=query,
                     candidates=fused[:10],
                     api_key=jina_key,
-                    model=os.environ.get("RERANKER_MODEL"),
+                    model=None,
                     top_n=5,
                     provider=provider,
                 )

@@ -143,14 +143,23 @@ def render_citation_markers(
     response_text: str,
     citations: List[CitationDTO],
 ) -> str:
-    """Replace internal chunk markers with stable user-facing citation numbers."""
-    citation_numbers: Dict[str, int] = {}
+    """Replace internal chunk markers with stable source-level citation numbers."""
+    source_numbers: Dict[str, int] = {}
+    chunk_numbers: Dict[str, int] = {}
     for citation in citations:
-        citation_numbers.setdefault(citation.chunk_id, len(citation_numbers) + 1)
+        source_key = citation.source_id or citation.chunk_id
+        source_numbers.setdefault(source_key, len(source_numbers) + 1)
+        chunk_numbers[citation.chunk_id] = source_numbers[source_key]
 
-    def replace(match: re.Match) -> str:
-        number = citation_numbers.get(match.group(1))
-        return f"[{number}]" if number is not None else ""
+    marker_group_re = re.compile(r"\[\[[^\[\]]+\]\](?:\s*\[\[[^\[\]]+\]\])*")
 
-    return CITATION_MARKER_RE.sub(replace, response_text)
+    def replace_group(match: re.Match) -> str:
+        numbers = list(dict.fromkeys(
+            chunk_numbers[chunk_id]
+            for chunk_id in CITATION_MARKER_RE.findall(match.group(0))
+            if chunk_id in chunk_numbers
+        ))
+        return "".join(f"[{number}]" for number in numbers)
+
+    return marker_group_re.sub(replace_group, response_text)
 # === TASK:WP-201:END ===

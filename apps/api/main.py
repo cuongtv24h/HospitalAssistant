@@ -8,11 +8,9 @@ provider calls and database connections are added by later work packages.
 import logging
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
 from apps.api.core.settings import Settings
@@ -43,12 +41,8 @@ from apps.api.ai.orchestrator.emergency_safety.pipeline import EmergencySafetyPi
 from apps.api.ai.orchestrator.appointment_booking.pipeline import AppointmentBookingPipeline
 from apps.api.ai.orchestrator.appointment_status.pipeline import AppointmentStatusPipeline
 from apps.api.foundation.appointments.tools.service import create_appointment_tools
-from apps.api.foundation.appointments.service import AppointmentService
 from apps.api.gateway.admin.router import router as admin_router
-from apps.api.gateway.foundation.appointments_router import (
-    router as foundation_appointments_router,
-    set_appointment_service,
-)
+from apps.api.gateway.foundation.appointments_router import router as foundation_appointments_router
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +51,6 @@ logger = logging.getLogger(__name__)
 load_dotenv(override=False)
 
 settings = Settings()
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CHAT_WEB_DIST = PROJECT_ROOT / "apps" / "chat-web" / "dist"
-ADMIN_WEB_DIST = PROJECT_ROOT / "apps" / "admin-web" / "dist"
 
 
 def cors_allow_origins():
@@ -69,35 +60,6 @@ def cors_allow_origins():
         "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174",
     )
     return [origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()]
-
-
-def _static_file_or_none(directory: Path, relative_path: str) -> Path | None:
-    """Resolve a static asset without allowing paths outside its build directory."""
-    candidate = (directory / relative_path).resolve()
-    try:
-        candidate.relative_to(directory.resolve())
-    except ValueError:
-        return None
-    return candidate if candidate.is_file() else None
-
-
-def _spa_response(directory: Path, relative_path: str) -> FileResponse:
-    """Serve a built asset or the SPA entry point for a client-side route."""
-    if not directory.is_dir():
-        raise HTTPException(
-            status_code=503,
-            detail="Frontend build is unavailable. Build the web application before serving it.",
-        )
-
-    asset = _static_file_or_none(directory, relative_path)
-    if asset:
-        headers = {"Cache-Control": "public, max-age=31536000, immutable"} if "/assets/" in asset.as_posix() else {}
-        return FileResponse(asset, headers=headers)
-
-    entry_point = directory / "index.html"
-    if not entry_point.is_file():
-        raise HTTPException(status_code=503, detail="Frontend entry point is unavailable.")
-    return FileResponse(entry_point, headers={"Cache-Control": "no-cache"})
 
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
@@ -109,8 +71,12 @@ async def lifespan(app_instance: FastAPI):
         app_instance.state.operational_runtime = None
         logger.error("Operational persistence dependency is unavailable", exc_info=False)
 
+    # The MVP uses one shared in-process Mock HIS store for agent booking,
+    # booking capability, status lookup, and Foundation reference endpoints.
+    appointment_tools = create_appointment_tools()
+
     try:
-        set_information_assistance_pipeline(build_agent_information_assistance_adapter())
+        set_information_assistance_pipeline(build_agent_information_assistance_adapter(appointment_tools=appointment_tools))
         logger.info("Configured PC-01 with the LangGraph hospital agent")
     except (RuntimeDependencyError, ValueError):
         logger.warning("PC-01 runtime dependencies are unavailable; requests use safe grounded fallback")
@@ -119,16 +85,13 @@ async def lifespan(app_instance: FastAPI):
     # internet, LLM availability or Supabase for its critical path.
     set_emergency_safety_pipeline(EmergencySafetyPipeline())
 
-    appointment_service = AppointmentService()
-    set_appointment_service(appointment_service)
-    appointment_tools = create_appointment_tools(appointment_service=appointment_service)
     set_appointment_booking_pipeline(
         AppointmentBookingPipeline(appointment_tools=appointment_tools)
     )
     set_appointment_status_pipeline(
         AppointmentStatusPipeline(appointment_tools=appointment_tools)
     )
-    logger.info("Configured PC-03 and PC-04 with the internal Mock HIS gateway")
+    logger.info("Configured PC-03 and PC-04 with shared internal Mock HIS adapter")
     yield
 
 
@@ -154,32 +117,4 @@ app.include_router(appointment_booking_router)
 app.include_router(appointment_status_router)
 app.include_router(admin_router)
 app.include_router(foundation_appointments_router)
-
-
-@app.get("/admin", include_in_schema=False)
-@app.get("/admin/", include_in_schema=False)
-async def serve_admin_home():
-    """Serve the Admin React application from its production build."""
-    return _spa_response(ADMIN_WEB_DIST, "")
-
-
-@app.get("/admin/{asset_path:path}", include_in_schema=False)
-async def serve_admin_static(asset_path: str):
-    """Serve Admin assets and client-side routes below ``/admin``."""
-    return _spa_response(ADMIN_WEB_DIST, asset_path)
-
-
-@app.get("/", include_in_schema=False)
-async def serve_chat_home():
-    """Serve the Chat React application from its production build."""
-    return _spa_response(CHAT_WEB_DIST, "")
-
-
-@app.get("/{asset_path:path}", include_in_schema=False)
-async def serve_chat_static(asset_path: str):
-    """Serve Chat assets and SPA routes without masking API routing mistakes."""
-    reserved_prefixes = ("v1", "docs", "openapi.json", "redoc", "admin")
-    if asset_path == "v1" or asset_path.startswith("v1/") or asset_path in reserved_prefixes:
-        raise HTTPException(status_code=404, detail="Not Found")
-    return _spa_response(CHAT_WEB_DIST, asset_path)
 # === TASK:WP-010:END ===

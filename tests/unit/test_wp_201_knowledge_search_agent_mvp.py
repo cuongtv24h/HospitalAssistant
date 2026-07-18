@@ -1,10 +1,12 @@
 # === TASK:WP-201:START ===
 import pytest
 from unittest.mock import MagicMock
-from packages.contracts.dto import SearchCandidateDTO
+import apps.api.ai.rag.reranker as reranker_module
+from packages.contracts.dto import CitationDTO, SearchCandidateDTO
 from apps.api.ai.rag import (
     citation_validation_issues,
     reciprocal_rank_fusion,
+    render_citation_markers,
     rerank_candidates,
     map_citations_to_response,
     search_hospital_information,
@@ -45,6 +47,50 @@ def test_reranker_adapter_fallback_on_failure(monkeypatch):
     assert not applied
     assert error is not None
     assert reranked[0].chunk_id == "c1"
+
+
+def test_reranker_defaults_to_jina_with_jina_model(monkeypatch):
+    monkeypatch.delenv("RERANKER_PROVIDER", raising=False)
+    monkeypatch.delenv("RERANKER_JINA_MODEL", raising=False)
+    monkeypatch.setenv("JINA_API_KEY", "fake")
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"results": [{"index": 0, "relevance_score": 0.95}]}
+    monkeypatch.setattr(reranker_module.requests, "post", MagicMock(return_value=response))
+    candidate = SearchCandidateDTO("c1", "content 1", 0.9, "bhyt", "sub1", "s1", "p1", "v1")
+
+    reranked, applied, error = rerank_candidates("query", [candidate])
+
+    assert applied
+    assert error is None
+    assert reranked[0].score == 0.95
+    assert reranker_module.requests.post.call_args.kwargs["json"]["model"] == reranker_module.JINA_DEFAULT_MODEL
+
+
+def test_bge_provider_uses_its_provider_specific_model(monkeypatch):
+    monkeypatch.setenv("RERANKER_PROVIDER", "bge")
+    monkeypatch.setenv("RERANKER_BGE_MODEL", "local/bge-model")
+    candidate = SearchCandidateDTO("c1", "content 1", 0.9, "bhyt", "sub1", "s1", "p1", "v1")
+    bge = MagicMock(return_value=([candidate], True, None))
+    monkeypatch.setattr(reranker_module, "_rerank_with_bge", bge)
+
+    rerank_candidates("query", [candidate])
+
+    assert bge.call_args.args[2] == "local/bge-model"
+
+
+def test_public_citation_numbers_are_grouped_by_source_id():
+    citations = [
+        CitationDTO("chunk-1", "source-a", "a.md", "section-1", "", "v1", "claim 1"),
+        CitationDTO("chunk-2", "source-a", "a.md", "section-2", "", "v1", "claim 2"),
+        CitationDTO("chunk-3", "source-b", "b.md", "section-1", "", "v1", "claim 3"),
+    ]
+
+    rendered = render_citation_markers(
+        "Thông tin A [[chunk-1]] [[chunk-2]].\nThông tin B [[chunk-2]].\nThông tin C [[chunk-3]].",
+        citations,
+    )
+
+    assert rendered == "Thông tin A [1].\nThông tin B [1].\nThông tin C [2]."
 
 def test_citation_mapping():
     c1 = SearchCandidateDTO("c1", "Giá dịch vụ khám bệnh là 150.000 VND.", 0.9, "bhyt", "sub1", "s1", "p1", "v1")

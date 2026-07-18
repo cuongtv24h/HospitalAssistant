@@ -320,10 +320,27 @@ def test_appointment_booking_passes_idempotency_key_to_pipeline_form_data() -> N
 
     response = client.post(
         CAPABILITY_ROUTE,
-        json=make_payload(message="xác nhận"),
+        json=make_payload(
+            message="xác nhận",
+            form_data={"expected_version": 3, "confirmation_fingerprint": "fingerprint-403"},
+        ),
         headers={"idempotency-key": "idem-403", "x-trace-id": "trace-idem-403"},
     )
 
     assert response.status_code == 200
     assert fake_pipeline.seen_request.form_data["idempotency_key"] == "idem-403"
+
+
+def test_appointment_booking_rejects_confirmation_without_bound_summary() -> None:
+    fake_pipeline = FakePipeline(created_response())
+    client = make_client(fake_pipeline)
+
+    response = client.post(
+        CAPABILITY_ROUTE,
+        json=make_payload(message="xác nhận"),
+        headers={"idempotency-key": "idem-403"},
+    )
+
+    assert response.status_code == 409
+    assert fake_pipeline.seen_request is None
 # === TASK:WP-403:END ===

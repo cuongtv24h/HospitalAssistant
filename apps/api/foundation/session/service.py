@@ -32,6 +32,8 @@ from packages.contracts import (
     INTERNAL_ERROR,
     INVALID_ENUM,
     FIELD_REQUIRED,
+    BookingFlowStateDTO,
+    PatientAppointmentDataDTO,
 )
 from apps.api.foundation.database.connection import DatabaseClient, DatabaseError
 from apps.api.foundation.operational_repository import OperationalRepository
@@ -142,36 +144,6 @@ class EmergencyContextDTO:
         return result
 
 
-@dataclass(frozen=True)
-class BookingFlowStateDTO:
-    """Booking flow state attached to a session."""
-
-    flow_id: Optional[str] = None
-    step: Optional[str] = None
-    selected_specialty_id: Optional[str] = None
-    selected_doctor_id: Optional[str] = None
-    selected_slot_id: Optional[str] = None
-    collected_fields: Dict[str, Any] = field(default_factory=dict)
-    missing_fields: List[str] = field(default_factory=list)
-    version: int = 0
-
-    def to_dict(self) -> Dict[str, Any]:
-        result = {"version": self.version}
-        if self.flow_id is not None:
-            result["flow_id"] = self.flow_id
-        if self.step is not None:
-            result["step"] = self.step
-        if self.selected_specialty_id is not None:
-            result["selected_specialty_id"] = self.selected_specialty_id
-        if self.selected_doctor_id is not None:
-            result["selected_doctor_id"] = self.selected_doctor_id
-        if self.selected_slot_id is not None:
-            result["selected_slot_id"] = self.selected_slot_id
-        if self.collected_fields:
-            result["collected_fields"] = dict(self.collected_fields)
-        if self.missing_fields:
-            result["missing_fields"] = list(self.missing_fields)
-        return result
 
 
 @dataclass(frozen=True)
@@ -252,15 +224,41 @@ class SessionContextPatchRequest:
         booking_flow = None
         if "booking_flow" in data and data["booking_flow"] is not None:
             bf = data["booking_flow"]
+            patient_data_raw = bf.get("patient_data")
+            patient_data = None
+            if patient_data_raw:
+                patient_data = PatientAppointmentDataDTO(
+                    patient_name=patient_data_raw.get("patient_name"),
+                    patient_phone=patient_data_raw.get("patient_phone"),
+                    patient_dob=patient_data_raw.get("patient_dob"),
+                    has_insurance=patient_data_raw.get("has_insurance"),
+                    visit_reason=patient_data_raw.get("visit_reason"),
+                )
             booking_flow = BookingFlowStateDTO(
+                session_id=bf.get("session_id"),
                 flow_id=bf.get("flow_id"),
+                version=bf.get("version", 0),
+                status=bf.get("status", "collecting"),
                 step=bf.get("step"),
+                current_step=bf.get("current_step"),
+                visit_type=bf.get("visit_type"),
+                specialty_id=bf.get("specialty_id"),
+                doctor_id=bf.get("doctor_id"),
+                slot_id=bf.get("slot_id"),
                 selected_specialty_id=bf.get("selected_specialty_id"),
                 selected_doctor_id=bf.get("selected_doctor_id"),
                 selected_slot_id=bf.get("selected_slot_id"),
                 collected_fields=bf.get("collected_fields", {}),
+                patient_data=patient_data,
                 missing_fields=bf.get("missing_fields", []),
-                version=bf.get("version", 0),
+                confirmation_token=bf.get("confirmation_token"),
+                confirmation_fingerprint=bf.get("confirmation_fingerprint"),
+                idempotency_key=bf.get("idempotency_key"),
+                created_appointment_id=bf.get("created_appointment_id"),
+                created_at=bf.get("created_at", time.time()),
+                updated_at=bf.get("updated_at", time.time()),
+                expires_at=bf.get("expires_at", 0.0),
+                last_error_code=bf.get("last_error_code"),
             )
 
         metadata = dict(data.get("metadata", {})) if data.get("metadata") else None
@@ -561,6 +559,145 @@ class SessionService:
             emergency_context=patch.emergency_context if patch.emergency_context is not None else ctx.emergency_context,
             booking_flow=patch.booking_flow if patch.booking_flow is not None else ctx.booking_flow,
             metadata=patch.metadata if patch.metadata is not None else ctx.metadata)
+
+    def load_booking_draft(self, session_id: str) -> Optional[BookingFlowStateDTO]:
+        """Load active booking draft for the session (FND-SES-02 / 2.1)."""
+        try:
+            ctx = self.get_session_context(session_id)
+            if ctx.booking_flow and ctx.booking_flow.flow_id:
+                # Enforce configurable draft TTL
+                if ctx.booking_flow.expires_at > 0 and ctx.booking_flow.expires_at < time.time():
+                    # Clear expired draft
+                    self.clear_booking_draft(session_id)
+                    return None
+                return ctx.booking_flow
+        except Exception:
+            pass
+        return None
+
+    def create_booking_draft(self, session_id: str, draft: BookingFlowStateDTO) -> BookingFlowStateDTO:
+        """Create or replace active booking draft for the session (2.1)."""
+        # Validate allowed fields
+        allowed_patient_fields = {"patient_name", "patient_phone", "patient_dob", "has_insurance", "visit_reason"}
+        if draft.collected_fields:
+            for k in draft.collected_fields:
+                if k not in allowed_patient_fields:
+                    raise ValueError(f"Field '{k}' is not allowed in collected_fields")
+
+        # Enforce configurable TTL
+        expires_at = draft.expires_at
+        if expires_at == 0.0:
+            ttl_minutes = 30
+            try:
+                ttl_minutes = int(os.environ.get("HA_BOOKING_DRAFT_TTL_MINUTES", "30"))
+            except Exception:
+                pass
+            expires_at = time.time() + (ttl_minutes * 60)
+
+        # Enforce one active flow per session and populate draft
+        new_draft = BookingFlowStateDTO(
+            session_id=session_id,
+            flow_id=draft.flow_id,
+            version=draft.version,
+            status=draft.status,
+            step=draft.step,
+            current_step=draft.current_step,
+            visit_type=draft.visit_type,
+            specialty_id=draft.specialty_id,
+            doctor_id=draft.doctor_id,
+            slot_id=draft.slot_id,
+            selected_specialty_id=draft.selected_specialty_id,
+            selected_doctor_id=draft.selected_doctor_id,
+            selected_slot_id=draft.selected_slot_id,
+            collected_fields=draft.collected_fields,
+            patient_data=draft.patient_data,
+            missing_fields=draft.missing_fields,
+            confirmation_token=draft.confirmation_token,
+            confirmation_fingerprint=draft.confirmation_fingerprint,
+            idempotency_key=draft.idempotency_key,
+            created_appointment_id=draft.created_appointment_id,
+            created_at=draft.created_at or time.time(),
+            updated_at=time.time(),
+            expires_at=expires_at,
+            last_error_code=draft.last_error_code,
+        )
+        patch = SessionContextPatchRequest(booking_flow=new_draft)
+        self.patch_session_context(session_id, patch)
+        return new_draft
+
+    def update_booking_draft_cas(self, session_id: str, draft: BookingFlowStateDTO, expected_version: int) -> bool:
+        """Update draft using compare-and-set version check (2.1)."""
+        # Validate allowed fields
+        allowed_patient_fields = {"patient_name", "patient_phone", "patient_dob", "has_insurance", "visit_reason"}
+        if draft.collected_fields:
+            for k in draft.collected_fields:
+                if k not in allowed_patient_fields:
+                    raise ValueError(f"Field '{k}' is not allowed in collected_fields")
+
+        try:
+            ctx = self.get_session_context(session_id)
+            current = ctx.booking_flow
+            if not current or current.version != expected_version:
+                return False
+            if draft.version != expected_version + 1:
+                return False
+            # The coordinator owns the monotonic increment; CAS verifies it.
+            new_draft = BookingFlowStateDTO(
+                session_id=draft.session_id,
+                flow_id=draft.flow_id,
+                version=draft.version,
+                status=draft.status,
+                step=draft.step,
+                current_step=draft.current_step,
+                visit_type=draft.visit_type,
+                specialty_id=draft.specialty_id,
+                doctor_id=draft.doctor_id,
+                slot_id=draft.slot_id,
+                selected_specialty_id=draft.selected_specialty_id,
+                selected_doctor_id=draft.selected_doctor_id,
+                selected_slot_id=draft.selected_slot_id,
+                collected_fields=draft.collected_fields,
+                patient_data=draft.patient_data,
+                missing_fields=draft.missing_fields,
+                confirmation_token=draft.confirmation_token,
+                confirmation_fingerprint=draft.confirmation_fingerprint,
+                idempotency_key=draft.idempotency_key,
+                created_appointment_id=draft.created_appointment_id,
+                created_at=draft.created_at,
+                updated_at=time.time(),
+                expires_at=draft.expires_at,
+                last_error_code=draft.last_error_code,
+            )
+            patch = SessionContextPatchRequest(booking_flow=new_draft)
+            self.patch_session_context(session_id, patch)
+            return True
+        except Exception:
+            return False
+
+    def clear_booking_draft(self, session_id: str) -> None:
+        """Clear active booking draft for the session (2.1)."""
+        patch = SessionContextPatchRequest(booking_flow=BookingFlowStateDTO())
+        self.patch_session_context(session_id, patch)
+
+    def close_booking_draft(self, session_id: str, created_appointment_id: str) -> None:
+        """Close/clear sensitive draft data after successful booking, retaining only the minimal details (2.3)."""
+        try:
+            ctx = self.get_session_context(session_id)
+            current = ctx.booking_flow
+        except Exception:
+            current = None
+        new_draft = BookingFlowStateDTO(
+            session_id=session_id,
+            flow_id=current.flow_id if current else None,
+            version=(current.version + 1) if current else 1,
+            status="created",
+            current_step="created",
+            created_appointment_id=created_appointment_id,
+            created_at=current.created_at if current else time.time(),
+            updated_at=time.time(),
+        )
+        patch = SessionContextPatchRequest(booking_flow=new_draft)
+        self.patch_session_context(session_id, patch)
 
 
 # ---------------------------------------------------------------------------

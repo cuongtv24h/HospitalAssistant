@@ -7,7 +7,6 @@ import { ChatClient, ChatClientError, type ChatCapability, type CapabilityRespon
 import { MicrophoneButton } from './speech/MicrophoneButton'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
-const sessionId = `web-${crypto.randomUUID()}`
 
 type Specialty = { specialty_id: string; name: string; description?: string }
 type Doctor = { doctor_id: string; full_name: string; title: string; profile_summary?: string }
@@ -51,6 +50,7 @@ const onboardingMessages = [
 ] as const
 
 function App() {
+  const [sessionId, setSessionId] = useState(() => `web-${crypto.randomUUID()}`)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<'chat' | 'booking' | 'status'>('chat')
@@ -205,6 +205,7 @@ function App() {
     setMessages([])
     setOnboardingComplete(false)
     setWelcomeTyping(true)
+    setSessionId(`web-${crypto.randomUUID()}`)
     setOnboardingCycle((current) => current + 1)
   }
 
@@ -221,7 +222,10 @@ function App() {
 
   function renderEnvelope(envelope: CapabilityResponseEnvelope) {
     const data = envelope.result as Record<string, unknown>
-    if (envelope.capability === 'information_assistance') return <InformationResponse response={data as unknown as InformationAssistanceResponse} />
+    if (envelope.capability === 'information_assistance') return <InformationResponse response={data as unknown as InformationAssistanceResponse} onSuggestedAction={(action) => {
+      if (action.type === 'confirm') void execute('information_assistance', 'Xác nhận')
+      else if (action.type === 'cancel') void execute('information_assistance', 'Hủy')
+    }} />
     if (envelope.capability === 'emergency_safety') return <EmergencyBanner response={data as unknown as EmergencySafetyResponse} />
     if (envelope.capability === 'appointment_booking') return <AppointmentFlow bookingResponse={data as unknown as AppointmentBookingResponse} onConfirmBooking={() => void submitBooking(true)} onCancelBooking={() => setMode('chat')} />
     return <AppointmentFlow statusResponse={data as unknown as AppointmentStatusResponse} />

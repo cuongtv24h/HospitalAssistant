@@ -35,6 +35,8 @@ from .dto import (
     CitationDTO,
     DegradationMetadataDTO,
     MockBookingReceiptDTO,
+    PatientAppointmentDataDTO,
+    BookingFlowStateDTO,
 )
 from .errors import (
     AI_OUTPUT_REJECTED,
@@ -129,6 +131,8 @@ __all__ = [
     "CitationDTO",
     "DegradationMetadataDTO",
     "MockBookingReceiptDTO",
+    "PatientAppointmentDataDTO",
+    "BookingFlowStateDTO",
     # Errors
     "ErrorDetail",
     "UnifiedErrorEnvelope",
