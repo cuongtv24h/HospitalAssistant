@@ -35,23 +35,21 @@ function Icon({ name }: { name: IconName }) {
 }
 
 const quickActions = [
-  { id: 'price', icon: 'banknote', title: 'Giá dịch vụ', prompt: 'Cho tôi biết bảng giá dịch vụ kỹ thuật.' },
-  { id: 'process', icon: 'clipboard', title: 'Quy trình khám', prompt: 'Hướng dẫn quy trình tiếp đón và khám bệnh.' },
-  { id: 'insurance', icon: 'shield-check', title: 'Thông tin BHYT', prompt: 'Tôi cần hướng dẫn khám chữa bệnh bằng BHYT.' },
-  { id: 'booking', icon: 'calendar-plus', title: 'Đặt lịch khám', prompt: '' },
-  { id: 'status', icon: 'calendar-search', title: 'Tra cứu lịch hẹn', prompt: '' },
-  { id: 'emergency', icon: 'alert-triangle', title: 'Tình huống khẩn cấp', prompt: 'Tôi cần hỗ trợ khẩn cấp.' },
+  { id: 'appointment', icon: 'calendar-plus', title: 'Đặt hoặc tra cứu lịch hẹn', subtitle: 'Đặt lịch mới, xem lịch trống, tra mã hẹn', prompt: 'Tôi muốn đặt hoặc tra cứu lịch hẹn' },
+  { id: 'preparation', icon: 'clipboard', title: 'Chuẩn bị đi khám / tái khám', subtitle: 'Giấy tờ, quy trình, những điều cần biết', prompt: 'Tôi cần chuẩn bị gì khi đi khám?' },
+  { id: 'insurance_cost', icon: 'shield-check', title: 'BHYT & chi phí', subtitle: 'Quyền lợi, giấy tờ BHYT, bảng giá dịch vụ', prompt: 'Tư vấn giúp tôi về BHYT và chi phí' },
+  { id: 'doctor_info', icon: 'user', title: 'Bác sĩ, khoa & giờ làm việc', subtitle: 'Tìm bác sĩ, chuyên khoa, lịch khám', prompt: 'Cho tôi thông tin bác sĩ, khoa và giờ làm việc' },
 ] as const
 
 const onboardingMessages = [
-  'Xin chào bạn, tôi là trợ lý Emy!',
-  'Rất vui được hỗ trợ bạn.',
-  'Bạn cần tôi hỗ trợ điều gì?',
-  'Bạn có thể chọn một trong các mục dưới đây hoặc nhập câu hỏi bằng ngôn ngữ tự nhiên để được tư vấn.',
+  'Xin chào! Tôi là trợ lý AI của Bệnh viện Tim Hà Nội.',
+  'Bạn đang cần tôi hỗ trợ về vấn đề gì?',
 ] as const
 
 function App() {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('app-theme') as 'dark' | 'light') || 'light'
+  })
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<'chat' | 'booking' | 'status'>('chat')
   const [loading, setLoading] = useState(false)
@@ -76,9 +74,9 @@ function App() {
     const timers: number[] = []
     const isTest = import.meta.env.TEST
     
-    const typingDelay = isTest ? 0 : 1200
-    const readingDelay = isTest ? 0 : 1000
-    const revealDelay = isTest ? 0 : 1000
+    const typingDelay = isTest ? 0 : 500
+    const readingDelay = isTest ? 0 : 400
+    const revealDelay = isTest ? 0 : 400
     
     const wait = (duration: number) => new Promise<void>((resolve) => {
       if (duration <= 0) resolve()
@@ -121,6 +119,7 @@ function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('app-theme', theme)
   }, [theme])
 
   useEffect(() => {
@@ -210,9 +209,7 @@ function App() {
 
   function chooseAction(action: typeof quickActions[number]) {
     setError(null)
-    if (action.id === 'booking') { setMode('booking'); setBookingStep('specialty'); return }
-    if (action.id === 'status') { setMode('status'); return }
-    void execute(action.id === 'emergency' ? 'emergency_safety' : 'information_assistance', action.prompt)
+    void execute('information_assistance', action.prompt, { hidden_context: { flow: action.id, step: 0 } })
   }
 
   function appendDictatedText(text: string) {
@@ -231,11 +228,11 @@ function App() {
 
   return <main className="chat-page" aria-label="Hospital Assistant chat">
     <section className="chat-shell">
-      <header className="chat-header"><div className="brand-mark"><Icon name="medical-cross" /></div><div><h1>Trợ lý Bệnh viện</h1><span><i /> Trực tuyến · Hỗ trợ 24/7</span></div><button className="new-chat" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} style={{ marginLeft: 'auto', padding: '9px', borderRadius: '50%', width: '38px', height: '38px', display: 'grid', placeItems: 'center' }} aria-label="Đổi giao diện"><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button><button className="new-chat" style={{ marginLeft: '8px' }} onClick={restartConversation}><Icon name="refresh" />Cuộc trò chuyện mới</button></header>
+      <header className="chat-header"><div className="brand-mark" style={{ padding: 0, overflow: 'hidden' }}><img src="/agent-avatar.png" alt="Hospital Assistant" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div><div><h1>Trợ lý Bệnh viện</h1><span><i /> Trực tuyến · Hỗ trợ 24/7</span></div><button className="new-chat" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} style={{ marginLeft: 'auto', padding: '9px', borderRadius: '50%', width: '38px', height: '38px', display: 'grid', placeItems: 'center' }} aria-label="Đổi giao diện"><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button><button className="new-chat" style={{ marginLeft: '8px' }} onClick={restartConversation}><Icon name="refresh" />Cuộc trò chuyện mới</button></header>
       <section className={`conversation ${isWelcomeExperience ? 'conversation--welcome' : ''} ${mode === 'booking' && bookingStep === 'specialty' ? 'conversation--booking' : ''} ${mode === 'status' ? 'conversation--status' : ''}`} aria-live="polite">
-        {messages.map((item) => <article key={item.id} className={`message ${item.side} ${item.id.startsWith('welcome-') ? 'message--welcome' : ''}`}>{!item.id.startsWith('welcome-') ? <div className="avatar"><Icon name={item.side === 'assistant' ? 'medical-cross' : 'user'} /></div> : null}<div className="bubble">{item.text ? <p>{item.text}</p> : null}{item.envelope ? renderEnvelope(item.envelope) : null}</div></article>)}
-        {isWelcomeExperience && welcomeTyping ? <div className="typing" aria-label="Emy đang nhập"><i /><i /><i /> Emy đang nhập…</div> : null}
-        {isWelcomeExperience && onboardingComplete ? <div className="quick-actions-wrapper"><section className="quick-actions quick-actions--revealed" aria-label="Gợi ý hỗ trợ"><div>{quickActions.map((action) => <button key={action.id} onClick={() => chooseAction(action)}><b><Icon name={action.icon} /></b><span>{action.title}</span><small><Icon name="chevron-right" /></small></button>)}</div></section></div> : null}
+        {messages.map((item) => <article key={item.id} className={`message ${item.side} ${item.id.startsWith('welcome-') ? 'message--welcome' : ''}`}>{!item.id.startsWith('welcome-') ? <div className="avatar" style={item.side === 'assistant' ? { padding: 0, overflow: 'hidden' } : undefined}>{item.side === 'assistant' ? <img src="/agent-avatar.png" alt="AI" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Icon name="user" />}</div> : null}<div className="bubble">{item.text ? <p>{item.text}</p> : null}{item.envelope ? renderEnvelope(item.envelope) : null}</div></article>)}
+
+        {isWelcomeExperience && onboardingComplete ? <div className="quick-actions-wrapper"><section className="quick-actions quick-actions--revealed" aria-label="Gợi ý hỗ trợ"><div>{quickActions.map((action) => <button key={action.id} onClick={() => chooseAction(action)}><b><Icon name={action.icon as any} /></b><span><strong>{action.title}</strong><br/><em>{action.subtitle}</em></span><small><Icon name="chevron-right" /></small></button>)}</div></section></div> : null}
         {mode === 'booking' ? <section className={`guided-card ${bookingStep === 'specialty' ? 'guided-card--specialty' : ''}`} aria-label="Đặt lịch khám"><button className="back-link" onClick={() => setMode('chat')}><Icon name="arrow-left" />Quay lại</button><p className="eyebrow">ĐẶT LỊCH KHÁM · BƯỚC {bookingStep === 'specialty' ? '1' : bookingStep === 'doctor' ? '2' : bookingStep === 'slot' ? '3' : '4'}/4</p>
           {bookingStep === 'specialty' ? <><h2>Chọn chuyên khoa</h2><div className="choice-grid">{specialties.map((x) => <button onClick={() => { setBooking({ ...booking, specialty_id: x.specialty_id, doctor_id: '', slot_id: '' }); setBookingStep('doctor') }} key={x.specialty_id}><b>{x.name}</b><span>{x.description || 'Tư vấn và khám theo chuyên khoa'}</span></button>)}</div></> : null}
           {bookingStep === 'doctor' ? <><h2>Chọn bác sĩ</h2><div className="choice-grid">{doctors.map((x) => <button onClick={() => { setBooking({ ...booking, doctor_id: x.doctor_id, slot_id: '' }); setBookingStep('slot') }} key={x.doctor_id}><b>{x.title} {x.full_name}</b><span>{x.profile_summary || 'Bác sĩ chuyên khoa'}</span></button>)}</div><button className="text-button" onClick={() => setBookingStep('specialty')}>Chọn lại chuyên khoa</button></> : null}
@@ -246,7 +243,7 @@ function App() {
         {loading ? <div className="typing"><i /><i /><i /> Đang xử lý yêu cầu…</div> : null}
         {error ? <p className="error" role="alert">{error}</p> : null}<div ref={endRef} />
       </section>
-      <footer className="composer"><form onSubmit={submitChat} style={{ minHeight: '46px', padding: '4px 4px 4px 18px' }}><textarea rows={1} aria-label="Nội dung" aria-keyshortcuts="Enter" title="Nhấn Enter để gửi, Shift + Enter để xuống dòng" placeholder={onboardingComplete ? 'Nhập câu hỏi của bạn…' : 'Emy đang chuẩn bị hỗ trợ bạn…'} value={input} onChange={(e) => { setInput(e.target.value); e.target.style.height = '26px'; e.target.style.height = e.target.scrollHeight + 'px'; }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} disabled={loading || mode !== 'chat' || !onboardingComplete} style={{ height: '26px', minHeight: '26px', padding: '0', fontSize: '16px', lineHeight: '26px', margin: 0, overflow: 'hidden' }} /><MicrophoneButton disabled={loading || mode !== 'chat' || !onboardingComplete} onTranscript={appendDictatedText} /><button aria-label="Gửi tin nhắn" title="Gửi tin nhắn" disabled={!input.trim() || loading || mode !== 'chat' || !onboardingComplete} style={{ width: '36px', height: '36px', padding: 0 }}><svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true" style={{ width: '18px', height: '18px' }}><path d="M21.4 3.6 13.8 21l-3.2-7.2L3 10.6 21.4 3.6Z" /><path d="m10.6 13.8 4.9-4.9" /></svg></button></form><p>Thông tin chỉ mang tính tham khảo, không thay thế tư vấn y tế trực tiếp.</p></footer>
+      <footer className="composer"><form onSubmit={submitChat} style={{ minHeight: '46px', padding: '4px 4px 4px 18px' }}><textarea rows={1} aria-label="Nội dung" aria-keyshortcuts="Enter" title="Nhấn Enter để gửi, Shift + Enter để xuống dòng" placeholder="Nhập câu hỏi của bạn…" value={input} onChange={(e) => { setInput(e.target.value); e.target.style.height = '26px'; e.target.style.height = e.target.scrollHeight + 'px'; }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} disabled={loading || mode !== 'chat'} style={{ height: '26px', minHeight: '26px', padding: '0', fontSize: '16px', lineHeight: '26px', margin: 0, overflow: 'hidden' }} /><MicrophoneButton disabled={loading || mode !== 'chat'} onTranscript={appendDictatedText} /><button className="send-button" aria-label="Gửi tin nhắn" title="Gửi tin nhắn" disabled={!input.trim() || loading || mode !== 'chat'} style={{ width: '36px', height: '36px', padding: 0 }}><svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true" style={{ width: '18px', height: '18px' }}><path d="M21.4 3.6 13.8 21l-3.2-7.2L3 10.6 21.4 3.6Z" /><path d="m10.6 13.8 4.9-4.9" /></svg></button></form><p>Thông tin chỉ mang tính tham khảo, không thay thế tư vấn y tế trực tiếp.</p></footer>
     </section>
   </main>
 }
