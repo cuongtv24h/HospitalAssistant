@@ -13,8 +13,8 @@ describe('BrowserSpeechRecognitionProvider', () => {
   it('detects native SpeechRecognition support', () => {
     class MockSpeechRecognition {
       lang = ''
-      interimResults = false
       continuous = false
+      interimResults = false
       maxAlternatives = 1
       onstart = null
       onend = null

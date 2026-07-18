@@ -110,4 +110,14 @@ def test_sufficiency_conflict_detection():
     c3 = SearchCandidateDTO("c3", "Giá dịch vụ: 150.000 VND.", 0.8, "bhyt", "khám bệnh", "s1", "p1", "v1")
     sufficient, reason = check_sufficiency_and_conflicts([c1, c3])
     assert sufficient
+
+
+def test_sufficiency_does_not_treat_reference_numbers_as_prices():
+    c1 = SearchCandidateDTO("c1", "Tham khảo mục 463 của quy trình.", 0.9, "bhyt", "tiếp đón", "s1", "p1", "v1")
+    c2 = SearchCandidateDTO("c2", "Tham khảo mục 477 của quy trình.", 0.8, "bhyt", "tiếp đón", "s1", "p1", "v1")
+
+    sufficient, reason = check_sufficiency_and_conflicts([c1, c2])
+
+    assert sufficient
+    assert reason is None
 # === TASK:WP-201:END ===

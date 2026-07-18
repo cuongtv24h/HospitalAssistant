@@ -4,17 +4,19 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import App from './App'
 import { BrowserSpeechRecognitionProvider } from './speech/SpeechRecognitionProvider'
 
-afterEach(() => vi.unstubAllGlobals())
-
 function renderApp() {
   return render(<BrowserSpeechRecognitionProvider><App /></BrowserSpeechRecognitionProvider>)
 }
 
+afterEach(() => vi.unstubAllGlobals())
+
 describe('App conversational experience', () => {
-  it('welcomes the visitor and presents JTBD quick actions', () => {
+  it('welcomes the visitor and presents JTBD quick actions', async () => {
     renderApp()
     expect(screen.getByRole('heading', { name: /trợ lý bệnh viện/i })).toBeInTheDocument()
-    expect(screen.getByText(/tôi có thể hỗ trợ bạn/i)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText(/bạn cần tôi hỗ trợ điều gì/i)).toBeInTheDocument()
+    })
     expect(screen.getByRole('button', { name: /giá dịch vụ/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /đặt lịch khám/i })).toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
@@ -31,6 +33,7 @@ describe('App conversational experience', () => {
     vi.stubGlobal('fetch', fetcher)
     renderApp()
 
+    await waitFor(() => expect(screen.getByRole('button', { name: /đặt lịch khám/i })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /đặt lịch khám/i }))
     await waitFor(() => expect(screen.getByRole('button', { name: /tim mạch/i })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /tim mạch/i }))
@@ -53,13 +56,14 @@ describe('App conversational experience', () => {
       onresult: ((event: { resultIndex: number; results: Array<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null = null
       onerror: (() => void) | null = null
       constructor() { instances.push(this) }
-      start() { this.onstart?.() }
-      stop() { this.onend?.() }
-      abort() { this.onend?.() }
+      start = vi.fn(() => this.onstart?.())
+      stop = vi.fn()
+      abort = vi.fn()
     }
     vi.stubGlobal('webkitSpeechRecognition', MockSpeechRecognition)
     renderApp()
 
+    await waitFor(() => expect(screen.getByRole('button', { name: /nhập bằng giọng nói/i })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /nhập bằng giọng nói/i }))
     const recognition = instances[0]
     expect(recognition.lang).toBe('vi-VN')

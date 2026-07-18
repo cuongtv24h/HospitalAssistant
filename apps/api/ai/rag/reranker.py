@@ -1,9 +1,11 @@
 # === TASK:WP-201:START ===
 import os
 import requests
+import time
 from functools import lru_cache
 from typing import List, Tuple, Optional
 from packages.contracts.dto import SearchCandidateDTO
+from apps.api.core.trace_logging import trace_event
 
 BGE_DEFAULT_MODEL = "BAAI/bge-reranker-v2-m3"
 JINA_DEFAULT_MODEL = "jina-reranker-v2-base-multilingual"
@@ -43,7 +45,9 @@ def _rerank_with_bge(
     candidates: List[SearchCandidateDTO],
     model: str,
     top_n: int,
+    trace_id: Optional[str] = None,
 ) -> Tuple[List[SearchCandidateDTO], bool, Optional[str]]:
+    started_at = time.monotonic()
     try:
         device = os.environ.get("RERANKER_DEVICE") or None
         cross_encoder = _load_bge_model(model, device)
@@ -59,8 +63,10 @@ def _rerank_with_bge(
             (_with_score(candidate, float(score)) for candidate, score in zip(candidates, scores)),
             key=lambda candidate: (-candidate.score, candidate.fused_rank or 0, candidate.chunk_id),
         )
+        trace_event("rag.rerank.bge.complete", trace_id=trace_id, started_at=started_at, output_count=min(len(ranked), top_n))
         return ranked[:top_n], True, None
     except Exception as exc:
+        trace_event("rag.rerank.bge.error", trace_id=trace_id, started_at=started_at, error_type=type(exc).__name__)
         return candidates[:top_n], False, f"BGE reranker failed: {type(exc).__name__}: {exc}"
 
 def rerank_candidates(
@@ -72,6 +78,7 @@ def rerank_candidates(
     timeout: float = 5.0,
     top_n: int = 5,
     provider: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> Tuple[List[SearchCandidateDTO], bool, Optional[str]]:
     """Rerank candidates locally with BGE or remotely with Jina."""
     if not candidates:
@@ -79,7 +86,7 @@ def rerank_candidates(
 
     provider = (provider or os.environ.get("RERANKER_PROVIDER", "bge")).lower()
     if provider == "bge":
-        return _rerank_with_bge(query, candidates, model or BGE_DEFAULT_MODEL, top_n)
+        return _rerank_with_bge(query, candidates, model or BGE_DEFAULT_MODEL, top_n, trace_id)
     if provider != "jina":
         return candidates[:top_n], False, f"Unsupported reranker provider: {provider}"
 
@@ -102,9 +109,11 @@ def rerank_candidates(
         "top_n": top_n
     }
     
+    started_at = time.monotonic()
     try:
         response = requests.post(base_url, json=payload, headers=headers, timeout=timeout)
         if response.status_code != 200:
+            trace_event("rag.rerank.jina.error", trace_id=trace_id, started_at=started_at, status_code=response.status_code, reason="http_status")
             return candidates[:top_n], False, f"Jina API returned status {response.status_code}: {response.text}"
             
         data = response.json()
@@ -130,10 +139,13 @@ def rerank_candidates(
             seen_indices.add(idx)
             reranked_candidates.append(_with_score(candidates[idx], float(score)))
             
+        trace_event("rag.rerank.jina.complete", trace_id=trace_id, started_at=started_at, output_count=len(reranked_candidates))
         return reranked_candidates, True, None
         
     except requests.exceptions.Timeout:
+        trace_event("rag.rerank.jina.error", trace_id=trace_id, started_at=started_at, reason="timeout")
         return candidates[:top_n], False, "Jina Reranker request timed out"
     except Exception as exc:
+        trace_event("rag.rerank.jina.error", trace_id=trace_id, started_at=started_at, error_type=type(exc).__name__)
         return candidates[:top_n], False, f"Jina Reranker failed: {exc}"
 # === TASK:WP-201:END ===

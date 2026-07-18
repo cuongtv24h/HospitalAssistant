@@ -76,7 +76,8 @@ def search_hospital_information_tool(query: str, config: RunnableConfig) -> Dict
         reranker_base_url=os.environ.get("RERANKER_BASE_URL", "https://api.jina.ai/v1/rerank"),
         reranker_timeout=float(os.environ.get("RERANKER_TIMEOUT_SECONDS", "5.0")),
         top_n=configurable.get("top_n", 5),
-        rrf_k=configurable.get("rrf_k", 60)
+        rrf_k=configurable.get("rrf_k", 60),
+        trace_id=configurable.get("thread_id"),
     )
     return result.to_dict()
 
