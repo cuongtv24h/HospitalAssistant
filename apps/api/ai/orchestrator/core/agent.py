@@ -280,13 +280,16 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
             "messages": state.get("messages", []) + [AIMessage(content=fallback)]
         }
 
-    model_name = os.environ.get("AGENT_MODEL", "gpt-5-mini")
-    openai_key = config.get("configurable", {}).get("openai_api_key")
+    provider_config = config.get("configurable", {})
+    model_name = provider_config.get("llm_model") or os.environ.get("AGENT_MODEL", "gpt-5-mini")
+    openai_key = provider_config.get("llm_api_key")
     llm_options = {
         "model": model_name,
         "openai_api_key": openai_key,
         "temperature": 0.0,
     }
+    if provider_config.get("llm_base_url"):
+        llm_options["base_url"] = provider_config["llm_base_url"]
     if remaining is not None:
         llm_options["timeout"] = max(0.1, remaining)
     llm = ChatOpenAI(**llm_options)

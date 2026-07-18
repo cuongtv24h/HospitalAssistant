@@ -627,6 +627,26 @@ def create_runtime_provider_chain(
     return LLMProviderChain(providers)
 
 
+def get_primary_agent_llm_config(
+    environment: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """Return private runtime options for the LangGraph OpenAI-compatible client.
+
+    This is an internal composition helper. Callers must never expose the
+    returned API key through an endpoint, log entry or client-facing DTO.
+    """
+    chain = create_runtime_provider_chain(environment)
+    provider = chain._providers[0]
+    if not isinstance(provider, OpenAICompatibleLLMProvider):
+        raise ValueError("Primary runtime LLM is not OpenAI-compatible")
+    return {
+        "api_key": provider._api_key,
+        "base_url": provider._base_url,
+        "model": provider.model,
+        "provider": provider.name,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Provider chain with fallback
 # ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ from langchain_core.messages import HumanMessage
 
 from apps.api.ai.orchestrator.core.agent import agent_graph
 from apps.api.core.runtime_dependencies import create_jina_query_embedding_provider
+from apps.api.ai.providers.llm_provider import get_primary_agent_llm_config
 
 
 class _QueryEmbedder:
@@ -37,8 +38,7 @@ class AgentInformationAssistanceAdapter:
     def __init__(self) -> None:
         if not os.environ.get("DATABASE_URL"):
             raise ValueError("DATABASE_URL is required for the hospital agent")
-        if not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError("OPENAI_API_KEY is required for the hospital agent")
+        self._llm_config = get_primary_agent_llm_config()
         self._embedder = _QueryEmbedder()
 
     @staticmethod
@@ -65,7 +65,12 @@ class AgentInformationAssistanceAdapter:
         config = {
             "configurable": {
                 "thread_id": request.session_id,
-                "openai_api_key": os.environ["OPENAI_API_KEY"],
+                # Generic OpenAI-compatible runtime configuration. This can
+                # point at Groq, Gemini or OpenRouter in the configured
+                # fallback order; it is never returned to a client.
+                "llm_api_key": self._llm_config["api_key"],
+                "llm_base_url": self._llm_config["base_url"],
+                "llm_model": self._llm_config["model"],
                 "jina_api_key": os.environ.get("JINA_API_KEY"),
                 "embedder": self._embedder,
                 "top_n": int(os.environ.get("RAG_TOP_N", "5")),
