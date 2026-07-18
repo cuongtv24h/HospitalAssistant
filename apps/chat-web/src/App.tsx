@@ -1,249 +1,294 @@
 // === TASK:WP-500:START ===
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { AppointmentFlow, type AppointmentBookingResponse, type AppointmentStatusResponse } from './features/appointments/AppointmentFlow'
-import { EmergencyBanner, type EmergencySafetyResponse } from './features/emergency-safety/EmergencyBanner'
-import { InformationResponse, type InformationAssistanceResponse } from './features/information-assistance/InformationResponse'
-import { ChatClient, ChatClientError, type ChatCapability, type CapabilityResponseEnvelope, type FoundationPage } from './shared/ChatClient'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import { MicrophoneButton } from './speech/MicrophoneButton'
+import { ChatClient, type ChatCapability } from './shared/ChatClient'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
+type Flow = 'appointment' | 'preparation' | 'insurance_cost' | 'doctor_info'
+type FlowState = { flow?: Flow; step?: string; data: Record<string, string> }
+type ChatMessage = { id: string; side: 'assistant' | 'user'; text: string; actions?: ChatAction[] }
+type ChatAction = { label: string; value: string; context?: Record<string, string> }
+
+type IconName = 'refresh' | 'user' | 'chevron-right' | 'sun' | 'moon'
+
 const sessionId = `web-${crypto.randomUUID()}`
 
-type Specialty = { specialty_id: string; name: string; description?: string }
-type Doctor = { doctor_id: string; full_name: string; title: string; profile_summary?: string }
-type AvailableSlot = { slot_id: string; date: string; time: string; room: string }
-type BookingStep = 'specialty' | 'doctor' | 'slot' | 'patient'
-type ChatMessage = { id: string; side: 'assistant' | 'user'; text?: string; envelope?: CapabilityResponseEnvelope }
-type IconName = 'medical-cross' | 'banknote' | 'clipboard' | 'shield-check' | 'calendar-plus' | 'calendar-search' | 'alert-triangle' | 'refresh' | 'user' | 'chevron-right' | 'arrow-left' | 'sun' | 'moon'
+const actionCards = [
+  { id: 'appointment', icon: '📅', title: 'Đặt hoặc tra cứu lịch hẹn', subtitle: 'Đặt lịch mới, xem lịch trống, tra mã hẹn', context: { flow: 'appointment' } },
+  { id: 'preparation', icon: '🧾', title: 'Chuẩn bị đi khám / tái khám', subtitle: 'Giấy tờ, quy trình, những điều cần biết', context: { flow: 'preparation' } },
+  { id: 'insurance_cost', icon: '🏥', title: 'BHYT & chi phí', subtitle: 'Quyền lợi, giấy tờ BHYT, bảng giá dịch vụ', context: { flow: 'insurance_cost' } },
+  { id: 'doctor_info', icon: '👨‍⚕️', title: 'Bác sĩ, khoa & giờ làm việc', subtitle: 'Tìm bác sĩ, chuyên khoa, lịch khám', context: { flow: 'doctor_info' } },
+] as const
+
+const specialties = ['Tim mạch', 'Nội tổng hợp', 'Khám nhi', 'Cấp cứu tim mạch']
+const doctors = ['BS. Nguyễn Minh Anh', 'ThS.BS. Trần Quốc Bình', 'BS.CKII. Lê Thu Hà']
+const slots = ['Thứ 2, 20/07 · 08:30', 'Thứ 3, 21/07 · 14:00', 'Thứ 5, 23/07 · 09:15']
+const onboardingMessages = ['Xin chào! Tôi là trợ lý AI của Bệnh viện Tim Hà Nội.', 'Bạn đang cần tôi hỗ trợ về vấn đề gì?'] as const
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
 function Icon({ name }: { name: IconName }) {
   return <svg className="app-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-    {name === 'medical-cross' ? <path d="M12 4v16M4 12h16" /> : null}
-    {name === 'banknote' ? <><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M7 9h.01M17 15h.01" /></> : null}
-    {name === 'clipboard' ? <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4.5h6v3H9zM9 12h6M9 16h4" /></> : null}
-    {name === 'shield-check' ? <><path d="M12 3 19 6v5c0 4.6-2.8 8-7 10-4.2-2-7-5.4-7-10V6l7-3Z" /><path d="m9 12 2 2 4-4" /></> : null}
-    {name === 'calendar-plus' ? <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v4M17 3v4M3 10h18M12 14v4M10 16h4" /></> : null}
-    {name === 'calendar-search' ? <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v4M17 3v4M3 10h11" /><circle cx="15.5" cy="15.5" r="2.5" /><path d="m17.5 17.5 2 2" /></> : null}
-    {name === 'alert-triangle' ? <><path d="M10.3 4.5 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.5a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></> : null}
     {name === 'refresh' ? <><path d="M20 11a8.1 8.1 0 0 0-14.9-3L3 10" /><path d="M3 4v6h6M4 13a8.1 8.1 0 0 0 14.9 3L21 14" /><path d="M21 20v-6h-6" /></> : null}
     {name === 'user' ? <><circle cx="12" cy="8" r="3.2" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></> : null}
     {name === 'chevron-right' ? <path d="m9 18 6-6-6-6" /> : null}
-    {name === 'arrow-left' ? <><path d="M19 12H5" /><path d="m11 18-6-6 6-6" /></> : null}
     {name === 'sun' ? <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></> : null}
     {name === 'moon' ? <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/> : null}
   </svg>
 }
 
-const quickActions = [
-  { id: 'appointment', icon: 'calendar-plus', title: 'Đặt hoặc tra cứu lịch hẹn', subtitle: 'Đặt lịch mới, xem lịch trống, tra mã hẹn', prompt: 'Tôi muốn đặt hoặc tra cứu lịch hẹn' },
-  { id: 'preparation', icon: 'clipboard', title: 'Chuẩn bị đi khám / tái khám', subtitle: 'Giấy tờ, quy trình, những điều cần biết', prompt: 'Tôi cần chuẩn bị gì khi đi khám?' },
-  { id: 'insurance_cost', icon: 'shield-check', title: 'BHYT & chi phí', subtitle: 'Quyền lợi, giấy tờ BHYT, bảng giá dịch vụ', prompt: 'Tư vấn giúp tôi về BHYT và chi phí' },
-  { id: 'doctor_info', icon: 'user', title: 'Bác sĩ, khoa & giờ làm việc', subtitle: 'Tìm bác sĩ, chuyên khoa, lịch khám', prompt: 'Cho tôi thông tin bác sĩ, khoa và giờ làm việc' },
-] as const
+function normalize(text: string) { return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd') }
+function isClearAppointmentIntent(text: string) {
+  const plain = normalize(text)
+  return /\b(dat\s+(cho|lich|kham|hen)|book\s+(lich|kham|hen)|dang\s+ky\s+kham|muon\s+dat\s+(cho|lich|kham|hen)|can\s+dat\s+(cho|lich|kham|hen)|hen\s+kham|lich\s+kham)\b/.test(plain)
+}
+function detectIntentFlow(text: string): Flow | undefined {
+  const plain = normalize(text)
+  if (isClearAppointmentIntent(text)) return 'appointment'
+  if (/\b(bhyt|bao hiem|vien phi|chi phi|chi phí|bang gia|gia kham|gia xet nghiem|gia dich vu|chuyen tuyen|the bhyt|vssid)\b/.test(plain)) return 'insurance_cost'
+  if (/\b(bac si|bác sĩ|chuyen khoa|khoa nao|gio lam|gio kham|lich bac si|phong kham)\b/.test(plain)) return 'doctor_info'
+  if (/\b(chuan bi|giay to|tai kham|nhap vien|can mang)\b/.test(plain)) return 'preparation'
+  return undefined
+}
+function inferSpecialty(text: string) {
+  const plain = normalize(text)
+  if (/tim|nguc|mach|huyet ap|hoi hop|kho tho/.test(plain)) return 'Tim mạch'
+  if (/tre|nhi|be|con toi/.test(plain)) return 'Khám nhi'
+  if (/cap cuu|dau nguc du doi|ngat/.test(plain)) return 'Cấp cứu tim mạch'
+  return ''
+}
+function validatePhone(value: string) { return /^(0|\+84)\d{8,10}$/.test(value.replace(/\s/g, '')) }
+function validateYear(value: string) { const year = Number(value); return year >= 1900 && year <= new Date().getFullYear() }
+function hasExplicitBookingConfirmation(state: FlowState) { return state.flow === 'appointment' && (state.step === 'confirm' || state.step === 'done') && Boolean(state.data.patient_name && state.data.patient_phone && state.data.birth_year && state.data.specialty && state.data.slot) }
+function isUnsafeAppointmentCompletionText(text: string, state: FlowState) {
+  if (hasExplicitBookingConfirmation(state)) return false
+  const plain = normalize(text)
+  return /(che do thu nghiem|\bdemo\b|mo phong|dat lich thanh cong|ghi nhan.*(dat lich|lich hen|yeu cau dat)|ma hen|hen-\d{4})/.test(plain)
+}
 
-const onboardingMessages = [
-  'Xin chào! Tôi là trợ lý AI của Bệnh viện Tim Hà Nội.',
-  'Bạn đang cần tôi hỗ trợ về vấn đề gì?',
-] as const
+type BackendAction = string | { label?: string; title?: string; value?: string; action?: string; context?: Record<string, string> }
+type BackendResult = {
+  message?: string
+  prompt?: string
+  answer?: string
+  suggested_actions?: BackendAction[]
+  actions?: BackendAction[]
+  conversation_state?: Record<string, unknown>
+}
 
 function App() {
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    return (localStorage.getItem('app-theme') as 'dark' | 'light') || 'light'
-  })
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (globalThis.localStorage?.getItem('app-theme') as 'dark' | 'light') || 'light')
   const [input, setInput] = useState('')
-  const [mode, setMode] = useState<'chat' | 'booking' | 'status'>('chat')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [onboardingCycle, setOnboardingCycle] = useState(0)
+  const [flowState, setFlowState] = useState<FlowState>({ data: {} })
   const [onboardingComplete, setOnboardingComplete] = useState(false)
   const [welcomeTyping, setWelcomeTyping] = useState(true)
-  const [specialties, setSpecialties] = useState<Specialty[]>([])
-  const [doctors, setDoctors] = useState<Doctor[]>([])
-  const [slots, setSlots] = useState<AvailableSlot[]>([])
-  const [bookingStep, setBookingStep] = useState<BookingStep>('specialty')
-  const [booking, setBooking] = useState({ visit_type: 'first_visit', specialty_id: '', doctor_id: '', slot_id: '', patient_name: '', patient_phone: '', patient_dob: '', has_insurance: false, visit_reason: '' })
-  const [bookingIdempotencyKey, setBookingIdempotencyKey] = useState<string | null>(null)
-  const [referenceLoading, setReferenceLoading] = useState(false)
-  const context = useMemo(() => ({ channel: 'web_page' as const, locale: 'vi-VN' as const }), [])
-  const client = useMemo(() => new ChatClient({ baseUrl: apiBaseUrl }), [])
+  const [onboardingCycle, setOnboardingCycle] = useState(0)
+  const [backendThinking, setBackendThinking] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let cancelled = false
-    const timers: number[] = []
-    const isTest = import.meta.env.TEST
-    
-    const typingDelay = isTest ? 0 : 500
-    const readingDelay = isTest ? 0 : 400
-    const revealDelay = isTest ? 0 : 400
-    
-    const wait = (duration: number) => new Promise<void>((resolve) => {
-      if (duration <= 0) resolve()
-      else timers.push(window.setTimeout(resolve, duration))
-    })
-
     async function playWelcome() {
-      setMessages([])
-      setOnboardingComplete(false)
-      setWelcomeTyping(false)
-
+      setMessages([]); setOnboardingComplete(false); setWelcomeTyping(false)
       for (let index = 0; index < onboardingMessages.length; index += 1) {
-        setWelcomeTyping(true)
-        await wait(typingDelay)
+        setWelcomeTyping(true); await new Promise((resolve) => setTimeout(resolve, import.meta.env.TEST ? 0 : 350))
         if (cancelled) return
-        
         setWelcomeTyping(false)
-        setMessages((current) => [...current, {
-          id: `welcome-${onboardingCycle}-${index}`,
-          side: 'assistant',
-          text: onboardingMessages[index],
-        }])
-        
-        if (index < onboardingMessages.length - 1) {
-          await wait(readingDelay)
-        } else {
-          await wait(revealDelay)
-        }
+        setMessages((current) => [...current, { id: `welcome-${onboardingCycle}-${index}`, side: 'assistant', text: onboardingMessages[index] }])
       }
-
       setOnboardingComplete(true)
     }
-
     void playWelcome()
-    return () => {
-      cancelled = true
-      timers.forEach((timer) => window.clearTimeout(timer))
-    }
+    return () => { cancelled = true }
   }, [onboardingCycle])
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('app-theme', theme)
-  }, [theme])
+  useEffect(() => { document.documentElement.setAttribute('data-theme', theme); globalThis.localStorage?.setItem('app-theme', theme) }, [theme])
+  useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth' }) }, [messages, welcomeTyping, backendThinking])
 
-  useEffect(() => {
-    const target = endRef.current
-    if (target && typeof target.scrollIntoView === 'function') {
-      const isWelcome = mode === 'chat' && !onboardingComplete
-      if (!isWelcome) target.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [messages, loading, mode, bookingStep, welcomeTyping, onboardingComplete])
-
-  useEffect(() => {
-    if (mode !== 'booking' || specialties.length) return
-    setReferenceLoading(true)
-    void client.get<FoundationPage<Specialty>>('/v1/foundation/specialties')
-      .then((page) => setSpecialties(page.items))
-      .catch(() => setError('Không thể tải danh sách chuyên khoa. Vui lòng thử lại.'))
-      .finally(() => setReferenceLoading(false))
-  }, [client, mode, specialties.length])
-
-  useEffect(() => {
-    if (!booking.specialty_id) return
-    setReferenceLoading(true)
-    void client.get<FoundationPage<Doctor>>(`/v1/foundation/doctors?specialty_id=${encodeURIComponent(booking.specialty_id)}`)
-      .then((page) => setDoctors(page.items))
-      .catch(() => setError('Không thể tải danh sách bác sĩ. Vui lòng thử lại.'))
-      .finally(() => setReferenceLoading(false))
-  }, [booking.specialty_id, client])
-
-  useEffect(() => {
-    if (!booking.doctor_id) return
-    setReferenceLoading(true)
-    void client.get<FoundationPage<AvailableSlot>>(`/v1/foundation/doctors/${encodeURIComponent(booking.doctor_id)}/available-slots`)
-      .then((page) => setSlots(page.items))
-      .catch(() => setError('Không thể tải khung giờ khám. Vui lòng thử lại.'))
-      .finally(() => setReferenceLoading(false))
-  }, [booking.doctor_id, client])
-
+  function addAssistant(text: string, actions: ChatAction[] = []) { setMessages((current) => [...current, { id: crypto.randomUUID(), side: 'assistant', text, actions }]) }
   function addUser(text: string) { setMessages((current) => [...current, { id: crypto.randomUUID(), side: 'user', text }]) }
-  function addEnvelope(envelope: CapabilityResponseEnvelope) { setMessages((current) => [...current, { id: crypto.randomUUID(), side: 'assistant', envelope }]) }
 
-  async function execute(capability: ChatCapability, text: string, extra: Record<string, unknown> = {}) {
-    setLoading(true); setError(null); addUser(text || 'Yêu cầu hỗ trợ')
-    const payload = capability === 'appointment_status'
-      ? { request_id: crypto.randomUUID(), session_id: sessionId, appointment_reference: { appointment_id: text.trim() }, ...extra }
-      : { request_id: crypto.randomUUID(), session_id: sessionId, message: text, ...extra }
-    try {
-      if (capability === 'information_assistance') {
-        await client.sendStream({ capability, payload, context }, (event, envelope) => { if (event === 'completed') addEnvelope(envelope) })
-      } else addEnvelope(await client.send({ capability, payload, context }))
-    } catch (caught) {
-      setError(caught instanceof ChatClientError ? caught.message : 'Không thể kết nối tới dịch vụ. Vui lòng thử lại.')
-    } finally { setLoading(false) }
+  function startFlow(flow: Flow) {
+    const hidden = { flow }
+    setFlowState({ flow, step: flow === 'appointment' ? 'intent' : 'menu', data: { session_id: sessionId } })
+    if (flow === 'appointment') addAssistant('Bạn muốn đặt lịch mới hay tra cứu lịch hẹn đã có?', [
+      { label: '📅 Đặt lịch mới', value: 'booking_new', context: hidden }, { label: '🔍 Tra cứu lịch hẹn', value: 'lookup', context: hidden },
+    ])
+    if (flow === 'preparation') addAssistant('Bạn thuộc trường hợp nào để tôi hướng dẫn chuẩn bị đi khám?', [
+      { label: 'Khám lần đầu', value: 'first_visit', context: hidden }, { label: 'Tái khám', value: 'revisit', context: hidden }, { label: 'Nhập viện', value: 'admission', context: hidden }, { label: 'Chưa rõ cần chuẩn bị gì', value: 'unclear', context: hidden },
+    ])
+    if (flow === 'insurance_cost') addAssistant('Bạn muốn hỏi về vấn đề nào?', [
+      { label: 'Quyền lợi BHYT', value: 'benefits', context: hidden }, { label: 'Giấy chuyển tuyến', value: 'referral', context: hidden }, { label: 'Giấy tờ cần mang', value: 'documents', context: hidden }, { label: 'Giá khám', value: 'exam_price', context: hidden }, { label: 'Giá xét nghiệm / dịch vụ', value: 'service_price', context: hidden },
+    ])
+    if (flow === 'doctor_info') addAssistant('Bạn muốn tìm thông tin bác sĩ, chuyên khoa hay giờ làm việc?', [
+      { label: 'Tìm bác sĩ', value: 'doctor_search', context: hidden }, { label: 'Danh sách chuyên khoa', value: 'specialty_list', context: hidden }, { label: 'Giờ làm việc', value: 'work_hours', context: hidden }, { label: 'Vị trí phòng khám', value: 'clinic_location', context: hidden },
+    ])
   }
 
-  async function submitChat(event: FormEvent) {
-    event.preventDefault()
-    if (!input.trim() || loading) return
-    const value = input.trim(); setInput('')
-    await execute('information_assistance', value)
+  function handleAction(action: ChatAction) {
+    addUser(action.label)
+    const contextFlow = action.context?.flow
+    if ((contextFlow === 'insurance_cost' || contextFlow === 'preparation' || contextFlow === 'doctor_info' || contextFlow === 'appointment') && contextFlow !== flowState.flow) return startFlow(contextFlow)
+    route(action.value)
   }
 
-  async function submitBooking(confirmed = false) {
-    const key = bookingIdempotencyKey ?? crypto.randomUUID()
-    setBookingIdempotencyKey(key)
-    const label = confirmed ? 'Xác nhận đặt lịch' : 'Kiểm tra thông tin đặt lịch'
-    setLoading(true); setError(null); addUser(label)
+  function route(value: string) {
+    const flow = flowState.flow
+    if (value === 'start_over') return restartConversation()
+    if (value.startsWith('backend:')) return callBackendFallback(value.split(':').slice(2).join(':') || value, 'information_assistance')
+    if (flow === 'appointment') return routeAppointment(value)
+    if (flow === 'preparation') return addAssistant(preparationResponse(value), followUps())
+    if (flow === 'insurance_cost') return routeInsuranceCost(value)
+    if (flow === 'doctor_info') return addAssistant(doctorInfoResponse(value), followUps())
+  }
+
+  function routeAppointment(value: string) {
+    const data = { ...flowState.data }
+    if (value === 'booking_new') { setFlowState({ flow: 'appointment', step: 'visit_type', data }); return addAssistant('Bạn đặt lịch cho loại lượt khám nào?', [{ label: 'Khám lần đầu', value: 'first_visit' }, { label: 'Tái khám', value: 'follow_up' }]) }
+    if (value === 'lookup') { setFlowState({ flow: 'appointment', step: 'lookup', data }); return addAssistant('Vui lòng nhập mã hẹn, ví dụ HEN-2026-0001. Nếu chưa nhớ mã, hãy nhập số điện thoại để tôi tra cứu theo thông tin bạn cung cấp.') }
+    if (['first_visit', 'follow_up'].includes(value)) { data.visit_type = value; setFlowState({ flow: 'appointment', step: 'specialty', data }); return addAssistant('Bạn muốn khám chuyên khoa nào? Nếu chưa rõ, hãy mô tả triệu chứng.', specialties.map((item) => ({ label: item, value: `specialty:${item}` }))) }
+    if (value.startsWith('specialty:')) { data.specialty = value.split(':')[1]; setFlowState({ flow: 'appointment', step: 'doctor', data }); return addAssistant(`Đã chọn ${data.specialty}. Bạn muốn chọn bác sĩ nào?`, [...doctors.map((item) => ({ label: item, value: `doctor:${item}` })), { label: 'Bất kỳ bác sĩ phù hợp', value: 'doctor:any' }]) }
+    if (value.startsWith('doctor:')) { data.doctor = value.split(':')[1] === 'any' ? 'Bác sĩ phù hợp sớm nhất' : value.split(':')[1]; setFlowState({ flow: 'appointment', step: 'slot', data }); return addAssistant(`Đã chọn ${data.doctor}. Các khung giờ còn trống:`, slots.map((item) => ({ label: item, value: `slot:${item}` }))) }
+    if (value.startsWith('slot:')) { data.slot = value.split(':').slice(1).join(':'); setFlowState({ flow: 'appointment', step: 'patient', data }); return addAssistant('Vui lòng nhập: Họ tên, số điện thoại, năm sinh. Ví dụ: Nguyễn Văn A, 0912345678, 1985') }
+    if (value === 'confirm_booking') { setFlowState({ flow: 'appointment', step: 'done', data }); return addAssistant(`Đặt lịch thành công. Mã hẹn: HEN-2026-0420. ${data.patient_name || 'Người bệnh'} khám ${data.specialty} lúc ${data.slot}. Vui lòng đến trước 15 phút và mang giấy tờ tùy thân/BHYT nếu có.`, followUps()) }
+    if (value === 'edit_booking') { setFlowState({ flow: 'appointment', step: 'specialty', data }); return addAssistant('Bạn muốn chỉnh lại chuyên khoa trước khi xác nhận?', specialties.map((item) => ({ label: item, value: `specialty:${item}` }))) }
+    if (value === 'cancel_booking') { setFlowState({ flow: 'appointment', step: 'cancelled', data }); return addAssistant('Tôi đã hủy thao tác đặt lịch trong phiên này. Bạn có thể bắt đầu lại khi cần.', followUps()) }
+  }
+
+  async function handleFreeText(text: string) {
+    addUser(text)
+    const plain = normalize(text)
+    const intentFlow = detectIntentFlow(text)
+    if (!flowState.flow) {
+      if (intentFlow) return startFlow(intentFlow)
+      if (/\b(lich|hen|dat)\b/.test(plain)) return startFlow('appointment')
+      return callBackendFallback(text, 'information_assistance')
+    }
+    if (intentFlow && intentFlow !== flowState.flow) return startFlow(intentFlow)
+    if (flowState.flow === 'appointment') return handleAppointmentText(text)
+    return callBackendFallback(text, 'information_assistance')
+  }
+
+  function backendActionsToChatActions(actions: BackendAction[] = []): ChatAction[] {
+    const knownValues = new Set(['start_over', 'booking_new', 'lookup', 'first_visit', 'follow_up', 'benefits', 'referral', 'documents', 'exam_price', 'service_price', 'doctor_search', 'specialty_list', 'work_hours', 'clinic_location', 'revisit', 'admission', 'unclear'])
+    return actions.map((action, index): ChatAction | undefined => {
+      if (typeof action === 'string') return { label: action, value: `backend:${index}:${action}` }
+      const label = action.label || action.title || action.value || action.action || ''
+      const value = action.value || action.action || ''
+      const contextFlow = action.context?.flow
+      if (contextFlow === 'insurance_cost' || contextFlow === 'preparation' || contextFlow === 'doctor_info' || contextFlow === 'appointment') return { label: label || 'Mở luồng phù hợp', value: value || `backend:${index}:${label}`, context: action.context }
+      if (value && (knownValues.has(value) || value.startsWith('specialty:') || value.startsWith('doctor:') || value.startsWith('slot:'))) return { label, value, context: action.context }
+      if (label.trim()) return { label, value: `backend:${index}:${label}` }
+      return undefined
+    }).filter((action): action is ChatAction => Boolean(action?.label.trim()))
+  }
+
+  async function callBackendFallback(text: string, capability: ChatCapability, extraContext: Record<string, string> = {}) {
+    setBackendThinking(true)
     try {
-      const envelope = await client.send({
-        capability: 'appointment_booking', context, idempotencyKey: confirmed ? key : undefined,
-        payload: { request_id: crypto.randomUUID(), session_id: sessionId, message: confirmed ? 'confirm' : '', form_data: { ...booking, confirmed, idempotency_key: key } },
+      const client = new ChatClient({ baseUrl: apiBaseUrl })
+      const envelope = await client.send<Record<string, unknown>, BackendResult>({
+        capability,
+        payload: {
+          request_id: crypto.randomUUID(),
+          session_id: sessionId,
+          message: text,
+          conversation_history: messages.slice(-12).map((item) => ({ role: item.side === 'assistant' ? 'assistant' : 'user', content: item.text })),
+          response_mode: 'sync',
+          ...(capability === 'appointment_booking' ? { form_data: flowState.data } : { button_context: { ...flowState.data, ...extraContext, flow: flowState.flow, step: flowState.step } }),
+        },
+        context: { channel: 'web_page', locale: 'vi-VN', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
       })
-      addEnvelope(envelope)
-      if ((envelope.result as Record<string, unknown>).outcome === 'created') { setBookingIdempotencyKey(null); setMode('chat') }
-    } catch (caught) { setError(caught instanceof ChatClientError ? caught.message : 'Không thể xử lý đặt lịch. Vui lòng thử lại.') }
-    finally { setLoading(false) }
+      const result = envelope.result || {}
+      const backendState = result.conversation_state || {}
+      const backendFlow = typeof backendState.flow === 'string' ? backendState.flow : undefined
+      const actionFlow = [...(result.suggested_actions || []), ...(result.actions || [])].find((action) => typeof action !== 'string' && typeof action.context?.flow === 'string')
+      const switchedFlow = backendFlow || (typeof actionFlow !== 'string' ? actionFlow?.context?.flow : undefined)
+      if (switchedFlow === 'insurance_cost' || switchedFlow === 'preparation' || switchedFlow === 'doctor_info' || switchedFlow === 'appointment') return startFlow(switchedFlow)
+      const textToShow = result.message || result.prompt || result.answer || 'Tôi đã nhận thông tin. Bạn có thể mô tả thêm nhu cầu để tôi hỗ trợ đúng luồng.'
+      if (capability === 'appointment_booking' && isUnsafeAppointmentCompletionText(textToShow, flowState)) return startFlow('appointment')
+      const actions = backendActionsToChatActions(result.suggested_actions || result.actions)
+      addAssistant(textToShow, actions)
+      if (result.conversation_state) setFlowState((current) => ({ ...current, data: { ...current.data, backend_context: JSON.stringify(result.conversation_state) } }))
+    } catch {
+      const isOfficialCostPolicyRequest = flowState.flow === 'insurance_cost' || extraContext.requires_official_source === 'true'
+      addAssistant(isOfficialCostPolicyRequest
+        ? 'Hiện tôi chưa truy xuất được dữ liệu chính thức từ hệ thống/RAG cho thông tin BHYT, viện phí hoặc bảng giá dịch vụ. Vui lòng kiểm tra tại quầy viện phí, quầy BHYT hoặc kênh liên hệ chính thức của bệnh viện; tôi sẽ không tự đưa số tiền hay quyền lợi khi chưa có nguồn chính thức.'
+        : 'Hiện tôi chưa kết nối được hệ thống AI/backend để xử lý nội dung tự do. Bạn có thể chọn một nút gợi ý bên dưới hoặc thử lại sau.', followUps())
+    } finally {
+      setBackendThinking(false)
+    }
   }
 
-  function restartConversation() {
-    setError(null)
-    setInput('')
-    setMode('chat')
-    setMessages([])
-    setOnboardingComplete(false)
-    setWelcomeTyping(true)
-    setOnboardingCycle((current) => current + 1)
+  function handleAppointmentText(text: string) {
+    const intentFlow = detectIntentFlow(text)
+    if (intentFlow && intentFlow !== 'appointment') return startFlow(intentFlow)
+    const data = { ...flowState.data }
+    if (flowState.step === 'lookup') return addAssistant(text.toUpperCase().includes('HEN-') ? `Kết quả tra cứu: mã ${text.trim()} đang ở trạng thái đã xác nhận, lịch khám dự kiến 20/07/2026 lúc 08:30 tại quầy khám Tim mạch.` : 'Tôi chưa tìm thấy mã hẹn khớp với thông tin bạn cung cấp. Vui lòng nhập mã hẹn hoặc số điện thoại chính xác hơn.', followUps())
+    if (flowState.step === 'specialty') {
+      const inferred = inferSpecialty(text)
+      if (inferred) { data.specialty = inferred; setFlowState({ flow: 'appointment', step: 'doctor', data }); return addAssistant(`Dựa trên mô tả, tôi gợi ý chuyên khoa ${inferred}. Bạn muốn chọn bác sĩ nào?`, [...doctors.map((item) => ({ label: item, value: `doctor:${item}` })), { label: 'Bất kỳ bác sĩ phù hợp', value: 'doctor:any' }]) }
+      return callBackendFallback(text, 'appointment_booking')
+    }
+    if (flowState.step === 'patient') {
+      const parts = text.split(',').map((part) => part.trim())
+      const phone = parts.find((part) => /^(0|\+84)\d[\d\s]{7,11}$/.test(part)) || ''
+      const year = parts.find((part) => /^\d{4}$/.test(part)) || ''
+      if (!phone || !validatePhone(phone)) return addAssistant('Số điện thoại chưa hợp lệ. Vui lòng nhập lại theo mẫu: Nguyễn Văn A, 0912345678, 1985')
+      if (!year || !validateYear(year)) return addAssistant('Năm sinh chưa hợp lệ. Vui lòng nhập năm sinh từ 1900 đến năm hiện tại, ví dụ: Nguyễn Văn A, 0912345678, 1985')
+      data.patient_name = parts[0] || 'Người bệnh'; data.patient_phone = phone; data.birth_year = year
+      setFlowState({ flow: 'appointment', step: 'confirm', data })
+      return addAssistant(`Vui lòng kiểm tra: ${data.patient_name}, SĐT ${data.patient_phone}, năm sinh ${data.birth_year}, ${data.visit_type === 'follow_up' ? 'tái khám' : 'khám lần đầu'}, chuyên khoa ${data.specialty}, bác sĩ ${data.doctor}, khung giờ ${data.slot}.`, [{ label: 'Xác nhận đặt lịch', value: 'confirm_booking' }, { label: 'Chỉnh sửa', value: 'edit_booking' }, { label: 'Hủy', value: 'cancel_booking' }])
+    }
+    void callBackendFallback(text, 'appointment_booking')
   }
 
-  function chooseAction(action: typeof quickActions[number]) {
-    setError(null)
-    void execute('information_assistance', action.prompt, { hidden_context: { flow: action.id, step: 0 } })
+  function followUps(): ChatAction[] { return [{ label: 'Trở lại', value: 'start_over' }] }
+  function preparationResponse(value: string) {
+    const map: Record<string, string> = {
+      first_visit: 'Khám lần đầu: vui lòng mang CCCD/hộ chiếu, thẻ BHYT nếu có, giấy chuyển tuyến nếu cần, hồ sơ bệnh án/cận lâm sàng cũ. Nên đến trước giờ hẹn 15–30 phút để làm thủ tục.',
+      revisit: 'Tái khám: mang sổ/phiếu hẹn tái khám, đơn thuốc đang dùng, kết quả xét nghiệm/cận lâm sàng gần nhất, giấy tờ tùy thân và BHYT nếu có.',
+      admission: 'Nhập viện: chuẩn bị giấy nhập viện, CCCD, BHYT, giấy chuyển tuyến nếu có, đồ dùng cá nhân cơ bản và thông tin người nhà liên hệ.',
+      unclear: 'Nếu chưa rõ trường hợp, hãy cho biết bạn đi khám lần đầu, tái khám theo hẹn, hay được chỉ định nhập viện. Trước mắt nên chuẩn bị CCCD, BHYT và hồ sơ y tế cũ.',
+    }
+    return map[value] || map.unclear
+  }
+  function routeInsuranceCost(value: string) {
+    const queryByAction: Record<string, string> = {
+      benefits: 'Quyền lợi BHYT tại Bệnh viện Tim Hà Nội, điều kiện hưởng, phạm vi thanh toán và lưu ý khi không có BHYT',
+      referral: 'Quy định giấy chuyển tuyến và điều kiện hưởng BHYT đúng tuyến tại Bệnh viện Tim Hà Nội',
+      documents: 'Giấy tờ cần mang để làm thủ tục BHYT tại Bệnh viện Tim Hà Nội',
+      exam_price: 'Giá khám chuyên khoa, khám Giáo sư Phó Giáo sư và bảng giá khám Bệnh viện Tim Hà Nội',
+      service_price: 'Bảng giá xét nghiệm, cận lâm sàng và dịch vụ kỹ thuật Bệnh viện Tim Hà Nội',
+    }
+    const query = queryByAction[value]
+    if (!query) return addAssistant('Bạn vui lòng chọn một nhóm thông tin BHYT hoặc chi phí để tôi truy xuất từ nguồn chính thức.', followUps())
+    void callBackendFallback(query, 'information_assistance', { selected_action: value, requires_official_source: 'true', source_requirement: 'rag_or_backend_citations' })
+  }
+  function doctorInfoResponse(value: string) {
+    const map: Record<string, string> = {
+      doctor_search: `Danh sách bác sĩ tham khảo: ${doctors.join('; ')}. Bạn có thể nhập tên bác sĩ hoặc chọn chuyên khoa để lọc lịch khám.`,
+      specialty_list: `Các chuyên khoa phổ biến: ${specialties.join(', ')}. Nếu có triệu chứng, tôi có thể gợi ý chuyên khoa phù hợp.`,
+      work_hours: 'Giờ làm việc tham khảo: khám ngoại trú từ Thứ 2–Thứ 6 07:30–16:30, Thứ 7 07:30–11:30. Cấp cứu tiếp nhận 24/7.',
+      clinic_location: 'Vị trí phòng khám tham khảo: khu khám ngoại trú tầng 1; quầy tiếp đón hướng dẫn phân luồng theo chuyên khoa và mã hẹn.',
+    }
+    return map[value] || 'Bạn vui lòng chọn tìm bác sĩ, chuyên khoa, giờ làm việc hoặc vị trí phòng khám.'
   }
 
-  function appendDictatedText(text: string) {
-    setInput((current) => current.trim() ? `${current.trimEnd()} ${text}` : text)
-  }
-
-  function renderEnvelope(envelope: CapabilityResponseEnvelope) {
-    const data = envelope.result as Record<string, unknown>
-    if (envelope.capability === 'information_assistance') return <InformationResponse response={data as unknown as InformationAssistanceResponse} />
-    if (envelope.capability === 'emergency_safety') return <EmergencyBanner response={data as unknown as EmergencySafetyResponse} />
-    if (envelope.capability === 'appointment_booking') return <AppointmentFlow bookingResponse={data as unknown as AppointmentBookingResponse} onConfirmBooking={() => void submitBooking(true)} onCancelBooking={() => setMode('chat')} />
-    return <AppointmentFlow statusResponse={data as unknown as AppointmentStatusResponse} />
-  }
-
-  const isWelcomeExperience = mode === 'chat' && messages.every((item) => item.id.startsWith('welcome-'))
+  function submitChat(event: FormEvent) { event.preventDefault(); if (!input.trim() || backendThinking) return; const value = input.trim(); setInput(''); void handleFreeText(value) }
+  function restartConversation() { setInput(''); setFlowState({ data: {} }); setMessages([]); setWelcomeTyping(true); setOnboardingComplete(false); setOnboardingCycle((current) => current + 1) }
+  function appendDictatedText(text: string) { setInput((current) => current.trim() ? `${current.trimEnd()} ${text.trim()}` : text.trim()) }
+  const isWelcomeExperience = messages.every((item) => item.id.startsWith('welcome-'))
 
   return <main className="chat-page" aria-label="Hospital Assistant chat">
     <section className="chat-shell">
       <header className="chat-header"><div className="brand-mark" style={{ padding: 0, overflow: 'hidden' }}><img src="/agent-avatar.png" alt="Hospital Assistant" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div><div><h1>Trợ lý Bệnh viện</h1><span><i /> Trực tuyến · Hỗ trợ 24/7</span></div><button className="new-chat" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} style={{ marginLeft: 'auto', padding: '9px', borderRadius: '50%', width: '38px', height: '38px', display: 'grid', placeItems: 'center' }} aria-label="Đổi giao diện"><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button><button className="new-chat" style={{ marginLeft: '8px' }} onClick={restartConversation}><Icon name="refresh" />Cuộc trò chuyện mới</button></header>
-      <section className={`conversation ${isWelcomeExperience ? 'conversation--welcome' : ''} ${mode === 'booking' && bookingStep === 'specialty' ? 'conversation--booking' : ''} ${mode === 'status' ? 'conversation--status' : ''}`} aria-live="polite">
-        {messages.map((item) => <article key={item.id} className={`message ${item.side} ${item.id.startsWith('welcome-') ? 'message--welcome' : ''}`}>{!item.id.startsWith('welcome-') ? <div className="avatar" style={item.side === 'assistant' ? { padding: 0, overflow: 'hidden' } : undefined}>{item.side === 'assistant' ? <img src="/agent-avatar.png" alt="AI" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Icon name="user" />}</div> : null}<div className="bubble">{item.text ? <p>{item.text}</p> : null}{item.envelope ? renderEnvelope(item.envelope) : null}</div></article>)}
-
-        {isWelcomeExperience && onboardingComplete ? <div className="quick-actions-wrapper"><section className="quick-actions quick-actions--revealed" aria-label="Gợi ý hỗ trợ"><div>{quickActions.map((action) => <button key={action.id} onClick={() => chooseAction(action)}><b><Icon name={action.icon as any} /></b><span><strong>{action.title}</strong><br/><em>{action.subtitle}</em></span><small><Icon name="chevron-right" /></small></button>)}</div></section></div> : null}
-        {mode === 'booking' ? <section className={`guided-card ${bookingStep === 'specialty' ? 'guided-card--specialty' : ''}`} aria-label="Đặt lịch khám"><button className="back-link" onClick={() => setMode('chat')}><Icon name="arrow-left" />Quay lại</button><p className="eyebrow">ĐẶT LỊCH KHÁM · BƯỚC {bookingStep === 'specialty' ? '1' : bookingStep === 'doctor' ? '2' : bookingStep === 'slot' ? '3' : '4'}/4</p>
-          {bookingStep === 'specialty' ? <><h2>Chọn chuyên khoa</h2><div className="choice-grid">{specialties.map((x) => <button onClick={() => { setBooking({ ...booking, specialty_id: x.specialty_id, doctor_id: '', slot_id: '' }); setBookingStep('doctor') }} key={x.specialty_id}><b>{x.name}</b><span>{x.description || 'Tư vấn và khám theo chuyên khoa'}</span></button>)}</div></> : null}
-          {bookingStep === 'doctor' ? <><h2>Chọn bác sĩ</h2><div className="choice-grid">{doctors.map((x) => <button onClick={() => { setBooking({ ...booking, doctor_id: x.doctor_id, slot_id: '' }); setBookingStep('slot') }} key={x.doctor_id}><b>{x.title} {x.full_name}</b><span>{x.profile_summary || 'Bác sĩ chuyên khoa'}</span></button>)}</div><button className="text-button" onClick={() => setBookingStep('specialty')}>Chọn lại chuyên khoa</button></> : null}
-          {bookingStep === 'slot' ? <><h2>Chọn khung giờ còn trống</h2><div className="slot-grid">{slots.map((x) => <button onClick={() => { setBooking({ ...booking, slot_id: x.slot_id }); setBookingStep('patient') }} key={x.slot_id}><b>{x.time}</b><span>{x.date} · {x.room}</span></button>)}</div><button className="text-button" onClick={() => setBookingStep('doctor')}>Chọn lại bác sĩ</button></> : null}
-          {bookingStep === 'patient' ? <form className="patient-form" onSubmit={(event) => { event.preventDefault(); void submitBooking(false) }}><h2>Thông tin người khám</h2><div className="visit-toggle"><button type="button" className={booking.visit_type === 'first_visit' ? 'selected' : ''} onClick={() => setBooking({ ...booking, visit_type: 'first_visit' })}>Khám lần đầu</button><button type="button" className={booking.visit_type === 'follow_up' ? 'selected' : ''} onClick={() => setBooking({ ...booking, visit_type: 'follow_up' })}>Tái khám</button></div><label>Họ và tên<input required value={booking.patient_name} onChange={(e) => setBooking({ ...booking, patient_name: e.target.value })} /></label><label>Số điện thoại<input required inputMode="tel" value={booking.patient_phone} onChange={(e) => setBooking({ ...booking, patient_phone: e.target.value })} /></label><label>Ngày sinh<input required type="date" value={booking.patient_dob} onChange={(e) => setBooking({ ...booking, patient_dob: e.target.value })} /></label><label>Lý do khám<input required value={booking.visit_reason} onChange={(e) => setBooking({ ...booking, visit_reason: e.target.value })} /></label><label className="check"><input type="checkbox" checked={booking.has_insurance} onChange={(e) => setBooking({ ...booking, has_insurance: e.target.checked })} /> Tôi có thẻ BHYT</label><button className="primary" disabled={loading}>Kiểm tra và xác nhận</button></form> : null}
-          {referenceLoading ? <p className="loading-copy">Đang tải dữ liệu đặt lịch…</p> : null}</section> : null}
-        {mode === 'status' ? <section className="guided-card status-card"><button className="back-link" onClick={() => setMode('chat')}><Icon name="arrow-left" />Quay lại</button><h2>Tra cứu lịch hẹn</h2><p>Nhập mã lịch hẹn của bạn để xem trạng thái mới nhất.</p><form onSubmit={(event) => { event.preventDefault(); const id = input.trim(); if (id) { setInput(''); setMode('chat'); void execute('appointment_status', id) } }}><input aria-label="Mã lịch hẹn" placeholder="Ví dụ: HEN-2026-0001" value={input} onChange={(e) => setInput(e.target.value)} /><button className="primary" disabled={!input.trim() || loading}>Tra cứu lịch</button></form></section> : null}
-        {loading ? <div className="typing"><i /><i /><i /> Đang xử lý yêu cầu…</div> : null}
-        {error ? <p className="error" role="alert">{error}</p> : null}<div ref={endRef} />
+      <section className={`conversation ${isWelcomeExperience ? 'conversation--welcome' : ''}`} aria-live="polite">
+        {messages.map((item) => <article key={item.id} className={`message ${item.side} ${item.id.startsWith('welcome-') ? 'message--welcome' : ''}`}>{!item.id.startsWith('welcome-') ? <div className="avatar" style={item.side === 'assistant' ? { padding: 0, overflow: 'hidden' } : undefined}>{item.side === 'assistant' ? <img src="/agent-avatar.png" alt="AI" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Icon name="user" />}</div> : null}<div className="bubble"><p>{item.text}</p>{item.actions?.length ? <div className="message-actions">{item.actions.map((action) => <button key={action.value + action.label} onClick={() => handleAction(action)}>{action.label}</button>)}</div> : null}</div></article>)}
+        {isWelcomeExperience && onboardingComplete ? <div className="quick-actions-wrapper"><section className="quick-actions quick-actions--revealed" aria-label="Gợi ý hỗ trợ"><div>{actionCards.map((action) => <button key={action.id} onClick={() => { addUser(action.title); startFlow(action.id) }} data-flow={action.context.flow}><b className="emoji-icon">{action.icon}</b><span><strong>{action.title}</strong><br/><em>{action.subtitle}</em></span><small><Icon name="chevron-right" /></small></button>)}</div></section></div> : null}
+        {welcomeTyping || backendThinking ? <div className="typing"><i /><i /><i /> {backendThinking ? 'Vui lòng chờ tôi tra cứu…' : 'Đang soạn tin…'}</div> : null}
+        <div ref={endRef} />
       </section>
-      <footer className="composer"><form onSubmit={submitChat} style={{ minHeight: '46px', padding: '4px 4px 4px 18px' }}><textarea rows={1} aria-label="Nội dung" aria-keyshortcuts="Enter" title="Nhấn Enter để gửi, Shift + Enter để xuống dòng" placeholder="Nhập câu hỏi của bạn…" value={input} onChange={(e) => { setInput(e.target.value); e.target.style.height = '26px'; e.target.style.height = e.target.scrollHeight + 'px'; }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} disabled={loading || mode !== 'chat'} style={{ height: '26px', minHeight: '26px', padding: '0', fontSize: '16px', lineHeight: '26px', margin: 0, overflow: 'hidden' }} /><MicrophoneButton disabled={loading || mode !== 'chat'} onTranscript={appendDictatedText} /><button className="send-button" aria-label="Gửi tin nhắn" title="Gửi tin nhắn" disabled={!input.trim() || loading || mode !== 'chat'} style={{ width: '36px', height: '36px', padding: 0 }}><svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true" style={{ width: '18px', height: '18px' }}><path d="M21.4 3.6 13.8 21l-3.2-7.2L3 10.6 21.4 3.6Z" /><path d="m10.6 13.8 4.9-4.9" /></svg></button></form><p>Thông tin chỉ mang tính tham khảo, không thay thế tư vấn y tế trực tiếp.</p></footer>
+      <footer className="composer"><form onSubmit={submitChat} style={{ minHeight: '46px', padding: '4px 4px 4px 18px' }}><textarea rows={1} aria-label="Nội dung" aria-keyshortcuts="Enter" title="Nhấn Enter để gửi, Shift + Enter để xuống dòng" placeholder="Nhập câu hỏi của bạn…" value={input} onChange={(e) => { setInput(e.target.value); e.target.style.height = '26px'; e.target.style.height = e.target.scrollHeight + 'px' }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} style={{ height: '26px', minHeight: '26px', padding: '0', fontSize: '16px', lineHeight: '26px', margin: 0, overflow: 'hidden' }} /><MicrophoneButton onTranscript={appendDictatedText} /><button className="send-button" aria-label="Gửi tin nhắn" title="Gửi tin nhắn" disabled={!input.trim() || backendThinking} style={{ width: '36px', height: '36px', padding: 0 }}><svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true" style={{ width: '18px', height: '18px' }}><path d="M21.4 3.6 13.8 21l-3.2-7.2L3 10.6 21.4 3.6Z" /><path d="m10.6 13.8 4.9-4.9" /></svg></button></form><p>Thông tin chỉ mang tính tham khảo, không thay thế tư vấn y tế trực tiếp.</p></footer>
     </section>
   </main>
 }
