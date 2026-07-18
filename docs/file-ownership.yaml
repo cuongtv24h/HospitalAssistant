@@ -1,0 +1,37 @@
+# File Ownership — Phase 6 Governance
+version: "1.0.0"
+policy:
+  model: exclusive-write-zone
+  reviewer_access: read_only
+  audit_access: read_only
+  escalation: Human Lead approves any cross-zone exception before editing
+zones:
+  - {id: GOV-DOCS, path: docs/, primary_pool: OTHER, write_mode: governed}
+  - {id: GOV-SCRIPTS, path: scripts/, primary_pool: OTHER, write_mode: governed}
+  - {id: DATA-SUPABASE, path: supabase/, primary_pool: DATA, write_mode: exclusive}
+  - {id: DATA-SEED, path: data/mvp/, primary_pool: DATA, write_mode: exclusive}
+  - {id: API-CONTRACTS, path: packages/contracts/, primary_pool: API, write_mode: exclusive}
+  - {id: API-FOUNDATION, path: apps/api/foundation/, primary_pool: API, write_mode: subdivided}
+  - {id: API-GATEWAY, path: apps/api/gateway/, primary_pool: API, write_mode: subdivided}
+  - {id: AI-PROVIDERS, path: apps/api/ai/providers/, primary_pool: AI-CORE, write_mode: exclusive}
+  - {id: AI-ORCHESTRATOR, path: apps/api/ai/orchestrator/, primary_pool: AI-CORE, write_mode: subdivided}
+  - {id: AI-GUARDRAILS, path: apps/api/ai/guardrails/, primary_pool: AI-CORE, write_mode: exclusive}
+  - {id: AI-RAG, path: apps/api/ai/rag/, primary_pool: AI-CORE, write_mode: exclusive}
+  - {id: EMERGENCY-PREFILTER, path: apps/api/capabilities/emergency/prefilter/, primary_pool: AI-CORE, write_mode: exclusive}
+  - {id: EMERGENCY-PROTOCOLS, path: apps/api/capabilities/emergency/protocols/, primary_pool: API, write_mode: exclusive}
+  - {id: MOCK-HIS, path: apps/mock_his/, primary_pool: API, write_mode: exclusive}
+  - {id: LOGGING, path: apps/api/logging/, primary_pool: API, write_mode: subdivided}
+  - {id: CHAT-WEB, path: apps/chat-web/, primary_pool: FE, write_mode: subdivided}
+  - {id: ADMIN-WEB, path: apps/admin-web/, primary_pool: FE, write_mode: subdivided}
+  - {id: CONFIG, path: config/, primary_pool: OTHER, write_mode: subdivided}
+  - {id: TESTS, path: tests/, primary_pool: QA, write_mode: reviewed_test_companion_exception}
+shared_files:
+  - {path: .env.example, steward: OTHER, change_rule: Human Lead approval}
+  - {path: README.md, steward: OTHER, change_rule: Human Lead approval}
+  - {path: docs/spec-registry/work-package-map.yaml, steward: Human Lead, change_rule: planning-only}
+  - {path: docs/spec-registry/task-to-file-contract-map.yaml, steward: Human Lead, change_rule: orchestration-only}
+test_companion_exception:
+  applies_to: "tests/unit/, tests/integration/, tests/contract/"
+  allowed_writer: "The owner_pool of the same work package when the exact pytest path is listed in task-to-file-contract-map.yaml."
+  qa_role: "QA retains review, integration and release ownership; it does not block the builder from writing its contracted companion test."
+  restriction: "A builder may not edit another work package's test file or any uncontracted test path."
