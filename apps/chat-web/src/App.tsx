@@ -224,9 +224,10 @@ function App() {
     return <AppointmentFlow statusResponse={data as unknown as AppointmentStatusResponse} />
   }
 
+  const isEmbedded = new URLSearchParams(window.location.search).get('embed') === '1'
   const isWelcomeExperience = mode === 'chat' && messages.every((item) => item.id.startsWith('welcome-'))
 
-  return <main className="chat-page" aria-label="Hospital Assistant chat">
+  return <main className={`chat-page ${isEmbedded ? 'chat-page--embedded' : ''}`} aria-label="Hospital Assistant chat">
     <section className="chat-shell">
       <header className="chat-header"><div className="brand-mark" style={{ padding: 0, overflow: 'hidden' }}><img src="/agent-avatar.png" alt="Hospital Assistant" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div><div><h1>Trợ lý Bệnh viện</h1><span><i /> Trực tuyến · Hỗ trợ 24/7</span></div><button className="new-chat" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} style={{ marginLeft: 'auto', padding: '9px', borderRadius: '50%', width: '38px', height: '38px', display: 'grid', placeItems: 'center' }} aria-label="Đổi giao diện"><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button><button className="new-chat" style={{ marginLeft: '8px' }} onClick={restartConversation}><Icon name="refresh" />Cuộc trò chuyện mới</button></header>
       <section className={`conversation ${isWelcomeExperience ? 'conversation--welcome' : ''} ${mode === 'booking' && bookingStep === 'specialty' ? 'conversation--booking' : ''} ${mode === 'status' ? 'conversation--status' : ''}`} aria-live="polite">

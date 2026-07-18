@@ -201,3 +201,9 @@
 :root[data-theme="light"] .composer button:disabled { color: rgba(0,0,0,0.22); }
 :root[data-theme="light"] .composer button.send-button { color: #fff; }
 :root[data-theme="light"] .composer button.send-button:disabled { color: rgba(255,255,255,0.7); }
+
+/* Embedded Widget Styles */
+.chat-page--embedded { padding: 0 !important; background: transparent !important; }
+.chat-page--embedded::before, .chat-page--embedded::after { display: none !important; }
+.chat-page--embedded .chat-shell { width: 100% !important; height: 100dvh !important; min-height: 100dvh !important; border-radius: 0 !important; box-shadow: none !important; border: none !important; }
+

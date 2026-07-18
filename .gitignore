@@ -70,3 +70,12 @@ scripts/*.zip
 start-local-static.bat
 stop-local-static.bat
 agent.md
+
+# Cloudflared tunneling tool
+cloudflared.exe
+
+
+# Build artifacts
+dist/
+apps/*/dist/
+

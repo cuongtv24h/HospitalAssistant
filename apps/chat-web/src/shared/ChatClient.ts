@@ -117,8 +117,10 @@ export class ChatClient {
 
     const body = (await response.json()) as CapabilityResponseEnvelope<TResult>
 
-    if (!response.ok || body.errors.length > 0) {
-      throw new ChatClientError(body.errors[0]?.message ?? 'Capability request failed', response.status, body)
+    if (!response.ok || (body.errors && body.errors.length > 0)) {
+      const detail = (body as any).detail
+      const fallback = detail ? (Array.isArray(detail) ? detail[0]?.msg : detail) : 'Capability request failed'
+      throw new ChatClientError(body.errors?.[0]?.message ?? fallback, response.status, body)
     }
 
     return body
@@ -153,7 +155,9 @@ export class ChatClient {
     })
     if (!response.ok || !response.body) {
       const body = (await response.json().catch(() => undefined)) as CapabilityResponseEnvelope | undefined
-      throw new ChatClientError(body?.errors?.[0]?.message ?? 'Streaming request failed', response.status, body)
+      const detail = (body as any)?.detail
+      const fallback = detail ? (Array.isArray(detail) ? detail[0]?.msg : detail) : 'Streaming request failed'
+      throw new ChatClientError(body?.errors?.[0]?.message ?? fallback, response.status, body)
     }
 
     const reader = response.body.getReader()
