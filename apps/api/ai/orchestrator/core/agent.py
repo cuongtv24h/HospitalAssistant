@@ -281,22 +281,8 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
         }
 
     provider_config = config.get("configurable", {})
-    model_name = provider_config.get("llm_model") or os.environ.get("AGENT_MODEL", "gpt-5-mini")
-    openai_key = provider_config.get("llm_api_key")
-    llm_options = {
-        "model": model_name,
-        "openai_api_key": openai_key,
-        "temperature": 0.0,
-    }
-    if provider_config.get("llm_base_url"):
-        llm_options["base_url"] = provider_config["llm_base_url"]
-    if remaining is not None:
-        llm_options["timeout"] = max(0.1, remaining)
-    llm = ChatOpenAI(**llm_options)
-
     # Bind only the two general agent tools
     tools = [search_hospital_information_tool, book_appointment_mock_tool]
-    llm_with_tools = llm.bind_tools(tools)
 
     # System instruction prompt loaded from file
     prompt_path = ROOT / "config" / "prompts" / "hospital-agent.md"
@@ -319,8 +305,31 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
             )
         input_msgs.append(SystemMessage(content=repair_instruction))
 
+    candidates = provider_config.get("llm_candidates") or [{
+        "model": provider_config.get("llm_model") or os.environ.get("AGENT_MODEL", "gpt-5-mini"),
+        "api_key": provider_config.get("llm_api_key"),
+        "base_url": provider_config.get("llm_base_url"),
+    }]
     started_at = time.monotonic()
-    response = llm_with_tools.invoke(input_msgs)
+    last_error = None
+    response = None
+    for candidate in candidates:
+        llm_options = {
+            "model": candidate.get("model"),
+            "openai_api_key": candidate.get("api_key"),
+            "temperature": 0.0,
+        }
+        if candidate.get("base_url"):
+            llm_options["base_url"] = candidate["base_url"]
+        if remaining is not None:
+            llm_options["timeout"] = max(0.1, remaining)
+        try:
+            response = ChatOpenAI(**llm_options).bind_tools(tools).invoke(input_msgs)
+            break
+        except Exception as exc:
+            last_error = exc
+    if response is None:
+        raise last_error or RuntimeError("No LLM provider candidate is available")
     elapsed = state.get("elapsed_time_seconds", 0.0) + (time.monotonic() - started_at)
 
     # Validate duplicate tool call prevention
