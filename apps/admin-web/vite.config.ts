@@ -9,11 +9,13 @@ export default defineConfig(({ mode }) => {
   const envDir = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
   const env = loadEnv(mode, envDir, '')
   const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000'
+  const appBasePath = env.VITE_APP_BASE_PATH || '/admin/'
 
   return {
     envDir,
-    // The Admin build is served by FastAPI below /admin/ in the VPS setup.
-    base: '/admin/',
+    // FastAPI serves the bundled Admin app below /admin/. A standalone Vercel
+    // deployment sets VITE_APP_BASE_PATH=/ so generated assets resolve at root.
+    base: appBasePath,
     plugins: [react()],
     server: {
       proxy: {
