@@ -26,6 +26,8 @@ from typing import Any, Dict, List, Literal, Mapping, Optional
 
 import httpx
 
+from apps.mock_his.service import MockHISStore
+
 from packages.contracts import (
     UnifiedErrorEnvelope,
     make_error_envelope,
@@ -610,6 +612,36 @@ class MockHISClient:
             )
 
 
+class InternalMockHISClient(MockHISClient):
+    """In-process MVP HIS gateway backed by the approved mock seed.
+
+    This adapter deliberately preserves the same narrow client surface as the
+    legacy HTTP client, so Foundation APIs and capability pipelines do not
+    change when a future real HIS HTTP adapter is introduced.
+    """
+
+    def __init__(self, store: Optional[MockHISStore] = None):
+        self._store = store or MockHISStore()
+
+    def _make_request(
+        self, method: str, path: str, *, json_body: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        if method == "GET" and path == "/mock-his/specialties":
+            return {"specialties": self._store.specialties()}
+        if method == "GET" and path == "/mock-his/doctors":
+            return {"doctors": self._store.doctors()}
+        if method == "GET" and path == "/mock-his/slots":
+            return {"slots": self._store.slots()}
+        if method == "GET" and path.startswith("/mock-his/appointments/"):
+            appointment_id = path.rsplit("/", 1)[-1]
+            appointment = self._store.appointment(appointment_id)
+            return appointment or {"error_code": "APPOINTMENT_NOT_FOUND"}
+        if method == "POST" and path == "/mock-his/appointments":
+            appointment, error_code = self._store.create_appointment(json_body or {})
+            return appointment or {"error_code": error_code or "INVALID_REQUEST"}
+        raise RuntimeError("Unsupported internal Mock HIS operation")
+
+
 # ---------------------------------------------------------------------------
 # Service class with business logic
 # ---------------------------------------------------------------------------
@@ -624,7 +656,7 @@ class AppointmentService:
     """
 
     def __init__(self, his_client: Optional[MockHISClient] = None):
-        self._his_client = his_client or MockHISClient()
+        self._his_client = his_client or InternalMockHISClient()
 
     def list_specialties(
         self,
@@ -906,8 +938,9 @@ __all__ = [
     "PatientAppointmentDataDTO",
     "AppointmentCreateRequest",
     "AppointmentDTO",
-    # Client
+    # Clients
     "MockHISClient",
+    "InternalMockHISClient",
     # Service
     "AppointmentService",
 ]

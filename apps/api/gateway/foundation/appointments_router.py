@@ -1,14 +1,21 @@
 """Lightweight Foundation appointment APIs; no AI reasoning."""
 
-import os
 from fastapi import APIRouter, HTTPException, Query
 
-from apps.api.foundation.appointments.service import AppointmentService, AppointmentServiceError, MockHISClient
+from apps.api.foundation.appointments.service import AppointmentService, AppointmentServiceError
 
 router = APIRouter(prefix="/v1/foundation", tags=["foundation-appointments"])
+_appointment_service = AppointmentService()
 
-def service():
-    return AppointmentService(MockHISClient(os.environ.get("MOCK_HIS_BASE_URL", "http://127.0.0.1:8001")))
+
+def set_appointment_service(service: AppointmentService) -> None:
+    """Inject the shared in-process appointment service during app startup."""
+    global _appointment_service
+    _appointment_service = service
+
+
+def service() -> AppointmentService:
+    return _appointment_service
 
 def failure(exc):
     raise HTTPException(503, "appointment foundation data is unavailable") from exc

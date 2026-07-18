@@ -55,6 +55,27 @@ Trợ lý AI hỗ trợ bệnh nhân và người nhà tra cứu thông tin chí
 Đây là phiên bản Hackathon / MVP định hướng demo và kiến trúc mở rộng.  
 Một số dữ liệu tích hợp bệnh viện hiện được mô phỏng qua Mock HIS.
 
+## Internal Mock HIS
+
+The MVP appointment provider is an in-process Mock HIS gateway backed by
+`data/mvp/seed/mock-his.json`. It does not need a separate HTTP process, port
+`8001`, or `MOCK_HIS_BASE_URL`. Foundation API contracts stay unchanged, so a
+future real HIS adapter can replace only this gateway.
+
+## VPS deployment without Nginx
+
+Build both frontend applications, then FastAPI serves everything on port 8000:
+
+```bash
+cd apps/chat-web && npm ci && npm run build
+cd ../admin-web && npm ci && npm run build
+python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+```
+
+- `http://<server>:8000/` — Chat App
+- `http://<server>:8000/admin/` — Admin App
+- `http://<server>:8000/v1/` — API
+
 ## Disclaimer
 
 Sản phẩm này **không thay thế bác sĩ**.  

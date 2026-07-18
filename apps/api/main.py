@@ -9,7 +9,6 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,8 +43,12 @@ from apps.api.ai.orchestrator.emergency_safety.pipeline import EmergencySafetyPi
 from apps.api.ai.orchestrator.appointment_booking.pipeline import AppointmentBookingPipeline
 from apps.api.ai.orchestrator.appointment_status.pipeline import AppointmentStatusPipeline
 from apps.api.foundation.appointments.tools.service import create_appointment_tools
+from apps.api.foundation.appointments.service import AppointmentService
 from apps.api.gateway.admin.router import router as admin_router
-from apps.api.gateway.foundation.appointments_router import router as foundation_appointments_router
+from apps.api.gateway.foundation.appointments_router import (
+    router as foundation_appointments_router,
+    set_appointment_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,19 +119,16 @@ async def lifespan(app_instance: FastAPI):
     # internet, LLM availability or Supabase for its critical path.
     set_emergency_safety_pipeline(EmergencySafetyPipeline())
 
-    his_base_url = os.environ.get("MOCK_HIS_BASE_URL", "")
-    parsed_his_url = urlparse(his_base_url)
-    if parsed_his_url.scheme in {"http", "https"} and parsed_his_url.netloc:
-        appointment_tools = create_appointment_tools(his_base_url=his_base_url)
-        set_appointment_booking_pipeline(
-            AppointmentBookingPipeline(appointment_tools=appointment_tools)
-        )
-        set_appointment_status_pipeline(
-            AppointmentStatusPipeline(appointment_tools=appointment_tools)
-        )
-        logger.info("Configured PC-03 and PC-04 with Mock HIS adapter")
-    else:
-        logger.warning("PC-03 and PC-04 are exposed but not configured: MOCK_HIS_BASE_URL must be an http(s) URL")
+    appointment_service = AppointmentService()
+    set_appointment_service(appointment_service)
+    appointment_tools = create_appointment_tools(appointment_service=appointment_service)
+    set_appointment_booking_pipeline(
+        AppointmentBookingPipeline(appointment_tools=appointment_tools)
+    )
+    set_appointment_status_pipeline(
+        AppointmentStatusPipeline(appointment_tools=appointment_tools)
+    )
+    logger.info("Configured PC-03 and PC-04 with the internal Mock HIS gateway")
     yield
 
 
