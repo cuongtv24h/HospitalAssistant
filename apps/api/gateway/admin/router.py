@@ -11,6 +11,7 @@ from apps.api.foundation.knowledge.content.service import (
     ContentDraftCreateRequest, ContentDraftPatchRequest, ContentManagementService,
     ContentPublishRequest, ContentReviewRequest, ContentSubmitRequest,
 )
+from apps.api.ai.providers.connection_health import check_llm_connections, configured_llm_connections
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
 
@@ -27,6 +28,16 @@ def dashboard():
         return repository().dashboard()
     except Exception as exc:
         raise HTTPException(503, "admin dashboard is unavailable") from exc
+
+@router.get("/system/llm-connections")
+def llm_connections():
+    """Expose non-secret LLM configuration for the privileged MVP dashboard."""
+    return {"connections": configured_llm_connections()}
+
+@router.post("/system/llm-connections/check")
+def check_llm_connections_endpoint():
+    """Verify provider connectivity without creating a model completion."""
+    return check_llm_connections()
 
 @router.get("/history")
 def history(limit: int = 50, offset: int = 0):
