@@ -4,7 +4,12 @@ import pytest
 from unittest.mock import MagicMock
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from apps.api.ai.orchestrator.core import agent_graph
-from apps.api.ai.orchestrator.core.agent import direct_safety_node, llm_node
+from apps.api.ai.orchestrator.core.agent import (
+    direct_safety_node,
+    grounding_verification_node,
+    llm_node,
+    route_repair,
+)
 
 def test_direct_high_safety_routing():
     # Composed Vietnamese emergency keyword to trigger direct rules
@@ -207,4 +212,47 @@ def test_bare_emergency_term_routes_direct_high():
 
     assert result["safety_result"]["risk"] == "HIGH"
     assert result["safety_result"]["source"] == "direct_rule"
+
+
+def test_factual_answer_without_current_observation_forces_search_instead_of_abstaining():
+    state = {
+        "messages": [
+            HumanMessage(content="Quy trình khám bệnh bằng bảo hiểm y tế"),
+            AIMessage(content="Người bệnh cần xuất trình thẻ BHYT."),
+        ],
+        "observations": [],
+        "repair_attempted": False,
+        "booking_result": None,
+    }
+
+    result = grounding_verification_node(state)
+
+    assert result["force_search_required"] is True
+    assert result["repair_attempted"] is True
+    assert route_repair({**state, **result}) == "forced_search_node"
+
+
+def test_read_only_appointment_answer_does_not_trigger_rag_forced_search():
+    state = {
+        "messages": [
+            HumanMessage(content="Khoa Tim mạch có bác sĩ nào?"),
+            AIMessage(content="Khoa có bác sĩ Nguyễn Minh An (DOC-001)."),
+        ],
+        "observations": [],
+        "appointment_observations": [{
+            "tool": "get_doctor_list",
+            "result": {
+                "outcome": "information",
+                "items": [{"doctor_id": "DOC-001", "full_name": "Nguyễn Minh An"}],
+            },
+        }],
+        "repair_attempted": False,
+        "booking_result": None,
+    }
+
+    result = grounding_verification_node(state)
+
+    assert result["final_response"].endswith("(DOC-001).")
+    assert result.get("force_search_required") is not True
+    assert result["degradation_status"]["appointment_reference_grounded"] is True
 # === TASK:WP-302:END ===

@@ -1,6 +1,6 @@
 // === TASK:WP-502:START ===
-import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { InformationResponse, type InformationAssistanceResponse } from './InformationResponse'
 
 const answeredResponse: InformationAssistanceResponse = {
@@ -32,7 +32,8 @@ const answeredResponse: InformationAssistanceResponse = {
 
 describe('InformationResponse', () => {
   it('renders a grounded answer with accessible citation links and next actions', () => {
-    render(<InformationResponse response={answeredResponse} />)
+    const onSuggestedAction = vi.fn()
+    render(<InformationResponse response={answeredResponse} onSuggestedAction={onSuggestedAction} />)
 
     expect(screen.getByLabelText('Response outcome')).toHaveTextContent('Đã trả lời dựa trên nguồn chính thức')
     expect(screen.getByText(answeredResponse.message)).toBeInTheDocument()
@@ -44,9 +45,10 @@ describe('InformationResponse', () => {
     expect(within(citations).getByText(/hiệu lực 2026-01-01/i)).toBeInTheDocument()
     expect(within(citations).getByText('Khoa khám bệnh tiếp nhận từ 7:00.')).toBeInTheDocument()
 
-    expect(screen.getByLabelText('Explainability')).toHaveTextContent('Có căn cứ từ nguồn chính thức')
-    expect(screen.getByLabelText('Explainability')).toHaveTextContent('Số nguồn: 1')
+    expect(screen.queryByLabelText('Explainability')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Đặt lịch khám' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Đặt lịch khám' }))
+    expect(onSuggestedAction).toHaveBeenCalledWith(answeredResponse.suggested_actions[0])
   })
 
   it('marks fallback content as not certain and does not imply grounded certainty', () => {
@@ -64,7 +66,7 @@ describe('InformationResponse', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('không được hiển thị như câu trả lời chắc chắn')
     expect(screen.getByLabelText('Response outcome')).toHaveTextContent('Chưa đủ căn cứ để trả lời chắc chắn')
-    expect(screen.getByLabelText('Explainability')).toHaveTextContent('Chưa đủ căn cứ từ nguồn chính thức')
+    expect(screen.queryByLabelText('Explainability')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Citations')).toHaveTextContent('Không có nguồn chính thức được đính kèm.')
     expect(screen.getByRole('button', { name: 'Liên hệ bệnh viện' })).toBeInTheDocument()
   })
@@ -85,6 +87,59 @@ describe('InformationResponse', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument()
     expect(screen.getByLabelText('Response outcome')).toHaveTextContent('Cần thêm thông tin để trả lời chính xác')
     expect(screen.queryByLabelText('Suggested actions')).not.toBeInTheDocument()
+  })
+
+  it('renders model markdown with line breaks, emphasis, and lists', () => {
+    render(
+      <InformationResponse
+        response={{
+          outcome: 'answered',
+          message: '**Quy trình khám**\nMang theo CCCD.\n- Đăng ký tại quầy\n- Xuất trình **thẻ BHYT**',
+          citations: [],
+          suggested_actions: [],
+        }}
+      />,
+    )
+
+    const answer = screen.getByLabelText('Answer content')
+    expect(within(answer).getByText('Quy trình khám').tagName).toBe('STRONG')
+    expect(within(answer).getByText('thẻ BHYT').tagName).toBe('STRONG')
+    expect(within(answer).getAllByRole('listitem')).toHaveLength(2)
+    expect(answer.querySelector('br')).toBeInTheDocument()
+  })
+
+  it('does not render raw HTML from model output', () => {
+    render(
+      <InformationResponse
+        response={{
+          outcome: 'answered',
+          message: 'Nội dung an toàn <script>alert("xss")</script> <b>không tin cậy</b>',
+          citations: [],
+          suggested_actions: [],
+        }}
+      />,
+    )
+
+    const answer = screen.getByLabelText('Answer content')
+    expect(answer.querySelector('script')).not.toBeInTheDocument()
+    expect(answer.querySelector('b')).not.toBeInTheDocument()
+  })
+
+  it('hides internal suggested actions that have no user-facing label', () => {
+    render(
+      <InformationResponse
+        response={{
+          outcome: 'booking_in_progress',
+          message: 'Vui lòng bổ sung ngày sinh.',
+          citations: [],
+          suggested_actions: [{ action_id: 'provide', type: 'provide', label: '' }],
+          conversation_state: { mode: 'booking' },
+        }}
+      />,
+    )
+
+    expect(screen.queryByLabelText('Suggested actions')).not.toBeInTheDocument()
+    expect(screen.queryByText('Hành động tiếp theo')).not.toBeInTheDocument()
   })
 })
 // === TASK:WP-502:END ===

@@ -75,6 +75,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visib
 .message.user { margin-left: auto; flex-direction: row-reverse; transform-origin: right bottom; }
 .avatar { width: 36px; height: 36px; background: #dff3f1; color: var(--teal-strong); font-size: 14px; font-weight: 800; border: 2px solid #7bb8b4; }
 .avatar .app-icon { width: 19px; height: 19px; stroke-width: 2.35; }
+.brand-mark--image, .avatar--image { overflow: hidden; padding: 0; }
+.brand-mark--image img, .avatar--image img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .user .avatar { background: #e3edf7; color: var(--primary-strong); border-color: #75a6cf; }
 .bubble { padding: 13px 16px; border: 2px solid #8bb4c5; border-radius: 6px 18px 18px; background: #ffffff; box-shadow: 0 5px 14px rgba(11, 37, 56, .12); line-height: 1.55; color: var(--text); font-size: 16px; }
 .bubble p { margin: 0; }
@@ -85,6 +87,15 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visib
 .bubble section[aria-label="Citations"] h3 { font-size: 1.08em; margin: 12px 0 6px; }
 .bubble section[aria-label="Citations"] ul { padding-left: 20px; margin: 0; }
 .bubble section[aria-label="Citations"] blockquote { margin: 4px 0 0; padding-left: 10px; border-left: 3px solid #7aa6b8; font-style: italic; }
+.markdown-answer { overflow-wrap: anywhere; }
+.markdown-answer p { margin: 0 0 .75em; }
+.markdown-answer p:last-child { margin-bottom: 0; }
+.markdown-answer ul, .markdown-answer ol { margin: .55em 0 .8em; padding-left: 1.4em; }
+.markdown-answer li { margin: .2em 0; }
+.markdown-answer strong { font-weight: 800; }
+.markdown-answer blockquote { margin: .75em 0; padding: .1em 0 .1em .8em; border-left: 3px solid currentColor; opacity: .8; }
+.markdown-answer code { padding: .12em .35em; border-radius: 4px; background: rgba(18, 54, 74, .08); font-size: .9em; }
+.markdown-answer a { color: var(--primary-strong); text-underline-offset: 2px; }
 
 .quick-actions { max-width: 760px; margin: 8px 0 22px 46px; }
 .conversation--welcome .quick-actions { width: min(760px, 100%); margin: 0 auto; text-align: center; }
@@ -108,14 +119,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, a:focus-visib
 .conversation--welcome .message--welcome { width: 100%; max-width: 720px; margin: 0 0 10px; }
 .conversation--welcome .message--welcome .bubble { max-width: min(92%, 600px); padding: 12px 16px; line-height: 1.45; transform-origin: left bottom; will-change: transform, opacity; }
 .conversation--welcome .typing { width: 100%; max-width: 720px; margin: 0 0 10px; }
-.conversation--welcome .quick-actions-wrapper { display: grid; animation: wrapper-expand 1.0s ease-in-out both; }
+.conversation--welcome .quick-actions-wrapper { display: grid; margin-top: 12px; }
 .conversation--welcome .quick-actions-wrapper > section { overflow: hidden; }
 .conversation--welcome .quick-actions--revealed { margin-top: 0; }
-.conversation--welcome .quick-actions--revealed p, .conversation--welcome .quick-actions--revealed button { animation: welcome-actions-in .8s ease-out both; }
-.conversation--welcome .quick-actions--revealed button:nth-child(1) { animation-delay: .08s; }
-.conversation--welcome .quick-actions--revealed button:nth-child(2) { animation-delay: .16s; }
-.conversation--welcome .quick-actions--revealed button:nth-child(3) { animation-delay: .24s; }
-.conversation--welcome .quick-actions--revealed button:nth-child(4) { animation-delay: .32s; }
 
 @keyframes message-appear { 0% { opacity: 0; transform: translateY(20px) scale(.96); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes welcome-actions-in { 0% { opacity: 0; transform: translateY(15px); } 100% { opacity: 1; transform: translateY(0); } }

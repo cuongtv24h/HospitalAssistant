@@ -138,3 +138,51 @@ def write_audit(runtime: Optional[OperationalRuntime], event_type: str, session_
         if critical:
             raise
         return False
+
+
+def redacted_booking_details(details: Dict[str, Any]) -> Dict[str, Any]:
+    """Return booking details with PII and sensitive tokens redacted (2.4)."""
+    redacted = dict(details)
+    sensitive_keys = {
+        "patient_phone", "phone",
+        "patient_dob", "dob",
+        "visit_reason", "reason",
+        "confirmation_token", "token",
+        "idempotency_key", "key"
+    }
+    for k, v in list(redacted.items()):
+        if k in sensitive_keys:
+            redacted[k] = "[REDACTED]"
+        elif isinstance(v, dict):
+            redacted[k] = redacted_booking_details(v)
+        elif isinstance(v, list):
+            redacted[k] = [
+                redacted_booking_details(item) if isinstance(item, dict) else item
+                for item in v
+            ]
+    return redacted
+
+
+def write_booking_audit(
+    runtime: Optional[OperationalRuntime],
+    event_type: str,
+    session_id: str,
+    action: str,
+    resource: str,
+    *,
+    details: Optional[Dict[str, Any]] = None,
+    outcome: str = "success",
+    critical: bool = False
+) -> bool:
+    """Write an audit entry with booking details redacted (2.4)."""
+    safe_details = redacted_booking_details(details or {})
+    return write_audit(
+        runtime,
+        event_type,
+        session_id,
+        action,
+        resource,
+        details=safe_details,
+        outcome=outcome,
+        critical=critical
+    )

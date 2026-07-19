@@ -20,6 +20,10 @@ export interface AppointmentSummary {
 export interface BookingFlowState {
   step: string
   missing_fields?: string[]
+  version?: number
+  confirmation_fingerprint?: string | null
+  expires_at?: number
+  last_error_code?: string | null
 }
 
 export interface AppointmentBookingResponse {
@@ -28,6 +32,8 @@ export interface AppointmentBookingResponse {
   prompt?: string
   appointment?: AppointmentSummary | null
   conversation_state?: BookingFlowState
+  suggested_actions?: Array<Record<string, unknown>>
+  error?: { code?: string; message?: string } | null
 }
 
 export interface AppointmentStatusResponse {
@@ -88,6 +94,14 @@ function BookingState({ response, onConfirmBooking, onCancelBooking }: {
         <p>{response.message}</p>
       </section>
     )
+  }
+
+  if (response.error?.code === 'DRAFT_EXPIRED') {
+    return <section aria-label="Booking expired"><p>Phiên đặt lịch đã hết hạn. Vui lòng bắt đầu lại.</p></section>
+  }
+
+  if (response.error?.code === 'SLOT_UNAVAILABLE') {
+    return <section aria-label="Booking slot unavailable"><p>Khung giờ vừa chọn không còn trống. Vui lòng tải và chọn khung giờ khác.</p></section>
   }
 
   return (

@@ -40,6 +40,7 @@ from packages.contracts import (
 from apps.api.foundation.appointments.service import (
     AppointmentService,
     AppointmentServiceError,
+    MockHISClient,
     SpecialtyDTO,
     DoctorDTO,
     AvailableSlotDTO,
@@ -636,18 +637,22 @@ class AppointmentTools:
 
 
 def create_appointment_tools(
-    appointment_service: Optional[AppointmentService] = None,
+    his_base_url: Optional[str] = None,
 ) -> AppointmentTools:
-    """Create appointment tools backed by an internal Foundation service.
+    """Create appointment tools with the internal MVP gateway or an HTTP HIS.
 
     Args:
-        appointment_service: Shared Foundation service. When omitted, the
-            service uses the internal Mock HIS gateway.
+        his_base_url: Base URL for the Mock HIS service.
 
     Returns:
         Configured AppointmentTools instance.
     """
-    return AppointmentTools(appointment_service=appointment_service or AppointmentService())
+    service = (
+        AppointmentService(his_client=MockHISClient(base_url=his_base_url))
+        if his_base_url
+        else AppointmentService()
+    )
+    return AppointmentTools(appointment_service=service)
 
 
 # ---------------------------------------------------------------------------

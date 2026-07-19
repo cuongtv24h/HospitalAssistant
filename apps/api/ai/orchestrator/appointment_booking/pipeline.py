@@ -13,6 +13,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Literal, Optional, Protocol, runtime_checkable
 
 from apps.api.foundation.appointments.tools.service import CreateAppointmentInput
+from packages.contracts import BookingFlowStateDTO, PatientAppointmentDataDTO
 
 BookingStep = Literal[
     "visit_type",
@@ -35,52 +36,6 @@ ALLOWED_VISIT_TYPES = ("first_visit", "follow_up")
 CONFIRMATION_WORDS = {"confirm", "confirmed", "yes", "đồng ý", "xac nhan", "xác nhận"}
 
 
-@dataclass(frozen=True)
-class PatientAppointmentDataDTO:
-    """Collected patient data needed for appointment creation."""
-
-    patient_name: str
-    patient_phone: str
-    patient_dob: str
-    has_insurance: bool
-    visit_reason: str
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "patient_name": self.patient_name,
-            "patient_phone": self.patient_phone,
-            "patient_dob": self.patient_dob,
-            "has_insurance": self.has_insurance,
-            "visit_reason": self.visit_reason,
-        }
-
-
-@dataclass(frozen=True)
-class BookingFlowStateDTO:
-    """Multi-turn state for PC-03 booking collection."""
-
-    session_id: str
-    current_step: BookingStep = "visit_type"
-    visit_type: Optional[str] = None
-    specialty_id: Optional[str] = None
-    doctor_id: Optional[str] = None
-    slot_id: Optional[str] = None
-    patient_data: Optional[PatientAppointmentDataDTO] = None
-    confirmation_token: Optional[str] = None
-    idempotency_key: Optional[str] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "session_id": self.session_id,
-            "current_step": self.current_step,
-            "visit_type": self.visit_type,
-            "specialty_id": self.specialty_id,
-            "doctor_id": self.doctor_id,
-            "slot_id": self.slot_id,
-            "patient_data": self.patient_data.to_dict() if self.patient_data else None,
-            "confirmation_token": self.confirmation_token,
-            "idempotency_key": self.idempotency_key,
-        }
 
 
 @dataclass(frozen=True)
@@ -129,7 +84,14 @@ class AppointmentCreationToolProtocol(Protocol):
 
 
 def _normalise_state(request: AppointmentBookingRequest) -> BookingFlowStateDTO:
-    return request.state or BookingFlowStateDTO(session_id=request.session_id)
+    return request.state or BookingFlowStateDTO(
+        session_id=request.session_id,
+        flow_id=f"flow-{uuid.uuid4()}",
+        version=0,
+        status="collecting",
+        step="visit_type",
+        current_step="visit_type",
+    )
 
 
 def _is_confirmed(message: str, form_data: Dict[str, Any]) -> bool:
@@ -162,6 +124,9 @@ def _confirmation_summary(state: BookingFlowStateDTO) -> str:
     )
 
 
+from apps.api.ai.orchestrator.appointment_booking.coordinator import DeterministicBookingCoordinator
+from apps.api.ai.orchestrator.appointment_booking.policy import enforce_create_policy, CreatePolicyError
+
 class AppointmentBookingPipeline:
     """Collect, confirm, then create pending appointment for PC-03."""
 
@@ -169,40 +134,135 @@ class AppointmentBookingPipeline:
         self._appointment_tools = appointment_tools
 
     def execute(self, request: AppointmentBookingRequest) -> AppointmentBookingResponse:
-        """Advance the booking state by one turn without creating before confirmation."""
+        """Advance the booking state by one turn using DeterministicBookingCoordinator."""
         state = _normalise_state(request)
-        data = request.form_data
+        data = dict(request.form_data)
+        confirmation_attempt = _is_confirmed(request.message, data)
+
+        # Confirmation is bound to the previously displayed canonical draft.
+        # Never merge resent booking fields into the same turn that creates it.
+        transition_data = data
+        if confirmation_attempt and request.state is not None:
+            transition_data = {
+                key: data[key]
+                for key in ("confirmed", "idempotency_key", "expected_version", "confirmation_fingerprint")
+                if key in data
+            }
+
+        coordinator = DeterministicBookingCoordinator(self._appointment_tools)
 
         try:
-            state = self._collect_visit_type(state, data)
-            if state.current_step == "visit_type":
-                return self._ask(state, "Bạn muốn đặt lịch khám lần đầu hay tái khám?", "collect_visit_type")
+            new_state = (
+                state
+                if confirmation_attempt and request.state is not None
+                else coordinator.process_turn(state, transition_data, request.message)
+            )
 
-            state = self._collect_specialty(state, data)
-            if state.current_step == "specialty":
-                return self._ask(state, "Vui lòng chọn chuyên khoa cần khám.", "collect_specialty")
+            if new_state.status == "expired":
+                return AppointmentBookingResponse(
+                    outcome="error",
+                    message="Phiên đặt lịch đã hết hạn. Vui lòng bắt đầu lại.",
+                    conversation_state=new_state,
+                    error={"code": "DRAFT_EXPIRED", "message": "Draft booking session has expired."}
+                )
 
-            state = self._collect_doctor(state, data)
-            if state.current_step == "doctor":
-                return self._ask(state, "Vui lòng chọn bác sĩ phù hợp.", "collect_doctor")
+            if new_state.status == "cancelled":
+                return AppointmentBookingResponse(
+                    outcome="collecting",
+                    message="Yêu cầu đặt lịch đã được hủy.",
+                    conversation_state=new_state
+                )
 
-            state = self._collect_slot(state, data)
-            if state.current_step == "slot":
-                return self._ask(state, "Vui lòng chọn khung giờ khám còn trống.", "collect_slot")
+            if new_state.current_step == "visit_type":
+                return self._ask(new_state, "Bạn muốn đặt lịch khám lần đầu hay tái khám?", "collect_visit_type")
 
-            state = self._collect_patient_data(state, data)
-            if state.current_step == "patient_data":
-                return self._ask(state, "Vui lòng cung cấp họ tên, số điện thoại, ngày sinh, BHYT và lý do khám.", "collect_patient_data")
+            elif new_state.current_step == "specialty":
+                return self._ask(new_state, "Vui lòng chọn chuyên khoa cần khám.", "collect_specialty")
 
-            if state.current_step == "confirmation" and not _is_confirmed(request.message, data):
+            elif new_state.current_step == "doctor":
+                return self._ask(new_state, "Vui lòng chọn bác sĩ phù hợp.", "collect_doctor")
+
+            elif new_state.current_step == "slot":
+                if new_state.last_error_code == "SLOT_UNAVAILABLE":
+                    return AppointmentBookingResponse(
+                        outcome="error",
+                        message="Khung giờ này đã được đặt hoặc không khả dụng. Vui lòng chọn khung giờ khác.",
+                        conversation_state=new_state,
+                        suggested_actions=[{"type": "refresh_slots", "doctor_id": new_state.doctor_id}],
+                        error={"code": "SLOT_UNAVAILABLE", "message": "The selected slot is no longer available."},
+                    )
+                return self._ask(new_state, "Vui lòng chọn khung giờ khám còn trống.", "collect_slot")
+
+            elif new_state.current_step == "patient_data":
+                field_labels = {
+                    "patient_name": "họ tên",
+                    "patient_phone": "số điện thoại",
+                    "patient_dob": "ngày sinh",
+                    "has_insurance": "thông tin BHYT",
+                    "visit_reason": "lý do khám hoặc tình trạng cần khám",
+                }
+                missing_labels = [field_labels[field] for field in new_state.missing_fields if field in field_labels]
+                if missing_labels:
+                    missing_text = ", ".join(missing_labels)
+                    message = f"Đã lưu các thông tin bạn cung cấp. Vui lòng bổ sung: {missing_text}."
+                else:
+                    message = "Vui lòng cung cấp họ tên, số điện thoại, ngày sinh, BHYT và lý do khám hoặc tình trạng cần khám."
+                return self._ask(new_state, message, "collect_patient_data")
+
+            elif new_state.current_step == "confirmation":
+                if confirmation_attempt:
+                    confirmed_state = replace(new_state, status="confirmed")
+                    return self._create_pending_appointment(
+                        confirmed_state,
+                        expected_version=data.get("expected_version"),
+                        expected_fingerprint=data.get("confirmation_fingerprint"),
+                    )
+
+                summary = coordinator.generate_confirmation_summary(new_state)
                 return AppointmentBookingResponse(
                     outcome="confirmation_required",
-                    message=_confirmation_summary(state),
-                    conversation_state=state,
+                    message=summary,
+                    conversation_state=new_state,
                     suggested_actions=[{"type": "confirm", "label": "Xác nhận đặt lịch"}],
                 )
 
-            return self._create_pending_appointment(state)
+            confirmed_state = replace(new_state, status="confirmed")
+            return self._create_pending_appointment(confirmed_state)
+
+        except CreatePolicyError as exc:
+            if exc.code == "SLOT_UNAVAILABLE":
+                recovered_state = replace(
+                    state,
+                    version=state.version + 1,
+                    status="collecting",
+                    step="slot",
+                    current_step="slot",
+                    slot_id=None,
+                    selected_slot_id=None,
+                    confirmation_token=None,
+                    confirmation_fingerprint=None,
+                    idempotency_key=None,
+                    last_error_code="SLOT_UNAVAILABLE",
+                )
+                return AppointmentBookingResponse(
+                    outcome="error",
+                    message="Khung giờ này đã được đặt hoặc không khả dụng. Vui lòng chọn khung giờ khác.",
+                    conversation_state=recovered_state,
+                    suggested_actions=[{"type": "refresh_slots", "doctor_id": state.doctor_id}],
+                    error={"code": "SLOT_UNAVAILABLE", "message": exc.message}
+                )
+            elif exc.code == "CONFIRMATION_REQUIRED":
+                return AppointmentBookingResponse(
+                    outcome="confirmation_required",
+                    message="Yêu cầu xác nhận trước khi đặt lịch.",
+                    conversation_state=state,
+                )
+            return AppointmentBookingResponse(
+                outcome="error",
+                message=exc.message,
+                conversation_state=state,
+                error={"code": exc.code, "message": exc.message}
+            )
         except Exception as exc:
             return AppointmentBookingResponse(
                 outcome="error",
@@ -211,59 +271,24 @@ class AppointmentBookingPipeline:
                 error={"code": "APPOINTMENT_BOOKING_FAILED", "message": str(exc)},
             )
 
-    def _collect_visit_type(self, state: BookingFlowStateDTO, data: Dict[str, Any]) -> BookingFlowStateDTO:
-        visit_type = state.visit_type or data.get("visit_type")
-        if visit_type not in ALLOWED_VISIT_TYPES:
-            return replace(state, current_step="visit_type")
-        return replace(state, visit_type=visit_type, current_step="specialty")
-
-    def _collect_specialty(self, state: BookingFlowStateDTO, data: Dict[str, Any]) -> BookingFlowStateDTO:
-        specialty_id = state.specialty_id or data.get("specialty_id")
-        if not specialty_id:
-            return replace(state, current_step="specialty")
-        return replace(state, specialty_id=specialty_id, current_step="doctor")
-
-    def _collect_doctor(self, state: BookingFlowStateDTO, data: Dict[str, Any]) -> BookingFlowStateDTO:
-        doctor_id = state.doctor_id or data.get("doctor_id")
-        if not doctor_id:
-            return replace(state, current_step="doctor")
-        return replace(state, doctor_id=doctor_id, current_step="slot")
-
-    def _collect_slot(self, state: BookingFlowStateDTO, data: Dict[str, Any]) -> BookingFlowStateDTO:
-        slot_id = state.slot_id or data.get("slot_id")
-        if not slot_id:
-            return replace(state, current_step="slot")
-        return replace(state, slot_id=slot_id, current_step="patient_data")
-
-    def _collect_patient_data(self, state: BookingFlowStateDTO, data: Dict[str, Any]) -> BookingFlowStateDTO:
-        if state.patient_data is not None:
-            return replace(state, current_step="confirmation")
-        if not all(field_name in data for field_name in REQUIRED_PATIENT_FIELDS):
-            return replace(state, current_step="patient_data")
-        patient = PatientAppointmentDataDTO(
-            patient_name=str(data["patient_name"]),
-            patient_phone=str(data["patient_phone"]),
-            patient_dob=str(data["patient_dob"]),
-            has_insurance=bool(data["has_insurance"]),
-            visit_reason=str(data["visit_reason"]),
-        )
-        return replace(
-            state,
-            patient_data=patient,
-            confirmation_token=state.confirmation_token or f"confirm-{uuid.uuid4()}",
-            # The gateway copies the Idempotency-Key header into form_data.
-            # Preserve it across the confirmation retry so Mock HIS receives
-            # the same key even though this MVP pipeline is reconstructed per
-            # HTTP request.
-            idempotency_key=state.idempotency_key or data.get("idempotency_key") or f"booking-{state.session_id}-{uuid.uuid4()}",
-            current_step="confirmation",
-        )
-
-    def _create_pending_appointment(self, state: BookingFlowStateDTO) -> AppointmentBookingResponse:
+    def _create_pending_appointment(
+        self,
+        state: BookingFlowStateDTO,
+        *,
+        expected_version: Optional[int] = None,
+        expected_fingerprint: Optional[str] = None,
+    ) -> AppointmentBookingResponse:
         if self._appointment_tools is None:
             raise RuntimeError("appointment creation tool is not configured")
-        if not state.patient_data or not state.visit_type or not state.doctor_id or not state.slot_id:
-            raise ValueError("appointment data is incomplete")
+
+        # Enforce create policy checks (4.2/4.3/4.4)
+        enforce_create_policy(
+            state,
+            self._appointment_tools,
+            expected_version=expected_version,
+            expected_fingerprint=expected_fingerprint,
+        )
+
         created = self._appointment_tools.create_appointment(
             CreateAppointmentInput(
                 doctor_id=state.doctor_id,
@@ -279,7 +304,13 @@ class AppointmentBookingPipeline:
             )
         )
         appointment = _appointment_to_dict(created)
-        final_state = replace(state, current_step="created")
+        final_state = replace(
+            state,
+            status="created",
+            step="created",
+            current_step="created",
+            created_appointment_id=appointment.get("appointment_id"),
+        )
         return AppointmentBookingResponse(
             outcome="created",
             message=f"Đã tạo lịch hẹn trạng thái pending. Mã lịch hẹn: {appointment.get('appointment_id')}.",

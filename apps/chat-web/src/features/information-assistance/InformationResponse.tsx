@@ -42,6 +42,7 @@ export interface InformationAssistanceResponse {
 
 export interface InformationResponseProps {
   response: InformationAssistanceResponse
+  onSuggestedAction?: (action: SuggestedActionDTO) => void
 }
 
 const uncertainOutcomes: InformationOutcome[] = ['clarification_required', 'fallback', 'refused', 'emergency_rerouted']
@@ -58,6 +59,10 @@ function outcomeLabel(outcome: InformationOutcome): string {
       return 'Không thể trả lời nội dung này'
     case 'emergency_rerouted':
       return 'Đã chuyển sang hướng dẫn an toàn khẩn cấp'
+    case 'booking_in_progress':
+      return 'Đang hỗ trợ đặt lịch khám'
+    case 'appointment_pending':
+      return 'Lịch hẹn đã được ghi nhận và đang chờ xác nhận'
     default:
       return `Trạng thái: ${outcome}`
   }
@@ -67,9 +72,12 @@ function isUncertain(outcome: InformationOutcome): boolean {
   return uncertainOutcomes.includes(outcome)
 }
 
-export function InformationResponse({ response }: InformationResponseProps) {
+export function InformationResponse({ response, onSuggestedAction }: InformationResponseProps) {
   const showUncertainNotice = isUncertain(response.outcome)
-  const sourceCount = response.explainability?.source_count ?? response.citations.length
+  const isBooking = response.conversation_state?.mode === 'booking'
+    || response.outcome === 'booking_in_progress'
+    || response.outcome === 'appointment_pending'
+  const visibleActions = response.suggested_actions.filter((action) => Boolean(action.label?.trim()))
 
   return (
     <article aria-label="Information assistance response">
@@ -83,18 +91,13 @@ export function InformationResponse({ response }: InformationResponseProps) {
         ) : null}
       </header>
 
-      <p>{response.message}</p>
+      <div className="markdown-answer" aria-label="Answer content">
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} skipHtml>
+          {response.message}
+        </ReactMarkdown>
+      </div>
 
-      {response.explainability ? (
-        <section aria-label="Explainability">
-          <h3>Độ tin cậy</h3>
-          <p>{response.explainability.grounded ? 'Có căn cứ từ nguồn chính thức' : 'Chưa đủ căn cứ từ nguồn chính thức'}</p>
-          <p>Số nguồn: {sourceCount}</p>
-          {response.explainability.confidence ? <p>Mức tin cậy: {response.explainability.confidence}</p> : null}
-        </section>
-      ) : null}
-
-      <section aria-label="Citations">
+      {!isBooking ? <section aria-label="Citations">
         <h3>Nguồn tham khảo</h3>
         {response.citations.length > 0 ? (
           <ul>
@@ -115,15 +118,15 @@ export function InformationResponse({ response }: InformationResponseProps) {
         ) : (
           <p>Không có nguồn chính thức được đính kèm.</p>
         )}
-      </section>
+      </section> : null}
 
-      {response.suggested_actions.length > 0 ? (
+      {visibleActions.length > 0 ? (
         <section aria-label="Suggested actions">
           <h3>Hành động tiếp theo</h3>
           <ul>
-            {response.suggested_actions.map((action) => (
+            {visibleActions.map((action) => (
               <li key={action.action_id}>
-                <button type="button">{action.label}</button>
+                <button type="button" onClick={() => onSuggestedAction?.(action)}>{action.label}</button>
               </li>
             ))}
           </ul>
@@ -133,3 +136,6 @@ export function InformationResponse({ response }: InformationResponseProps) {
   )
 }
 // === TASK:WP-502:END ===
+import ReactMarkdown from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
+import remarkGfm from 'remark-gfm'

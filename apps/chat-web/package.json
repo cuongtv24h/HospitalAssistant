@@ -1,6 +1,13 @@
 {
   "name": "chat-web",
-  "x-task-region-markers": ["TASK:WP-500:START", "TASK:WP-500:END", "TASK:WP-501:START", "TASK:WP-501:END", "TASK:WP-602:START", "TASK:WP-602:END"],
+  "x-task-region-markers": [
+    "TASK:WP-500:START",
+    "TASK:WP-500:END",
+    "TASK:WP-501:START",
+    "TASK:WP-501:END",
+    "TASK:WP-602:START",
+    "TASK:WP-602:END"
+  ],
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -14,7 +21,10 @@
   },
   "dependencies": {
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",

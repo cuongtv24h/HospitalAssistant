@@ -174,6 +174,8 @@ class RuntimeSettings:
     rate_limits: RateLimitSettings
     channels: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    booking_draft_ttl_minutes: int = 30
+    enable_agentic_booking: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -182,6 +184,8 @@ class RuntimeSettings:
             "rate_limits": self.rate_limits.to_dict(),
             "channels": dict(self.channels),
             "metadata": dict(self.metadata),
+            "booking_draft_ttl_minutes": self.booking_draft_ttl_minutes,
+            "enable_agentic_booking": self.enable_agentic_booking,
         }
 
 
@@ -229,6 +233,8 @@ def load_runtime_settings(path: Path) -> RuntimeSettings:
         rate_limits=rate_limits,
         channels=raw.get("channels", {}),
         metadata=raw.get("metadata", {}),
+        booking_draft_ttl_minutes=raw.get("booking_draft_ttl_minutes", 30),
+        enable_agentic_booking=raw.get("enable_agentic_booking", False),
     )
 
 

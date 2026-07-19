@@ -369,6 +369,84 @@ class DegradationMetadataDTO:
         }
 
 
+import time
+
+@dataclass(frozen=True)
+class PatientAppointmentDataDTO:
+    """Collected patient data needed for appointment creation."""
+    patient_name: str
+    patient_phone: str
+    patient_dob: str
+    has_insurance: bool
+    visit_reason: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "patient_name": self.patient_name,
+            "patient_phone": self.patient_phone,
+            "patient_dob": self.patient_dob,
+            "has_insurance": self.has_insurance,
+            "visit_reason": self.visit_reason,
+        }
+
+
+@dataclass(frozen=True)
+class BookingFlowStateDTO:
+    """Multi-turn state for PC-03 booking collection."""
+    session_id: Optional[str] = None
+    flow_id: Optional[str] = None
+    version: int = 0
+    status: str = "collecting"
+    step: Optional[str] = "visit_type"
+    current_step: Optional[str] = "visit_type"
+    visit_type: Optional[str] = None
+    specialty_id: Optional[str] = None
+    doctor_id: Optional[str] = None
+    slot_id: Optional[str] = None
+    selected_specialty_id: Optional[str] = None
+    selected_doctor_id: Optional[str] = None
+    selected_slot_id: Optional[str] = None
+    collected_fields: Dict[str, Any] = field(default_factory=dict)
+    patient_data: Optional[PatientAppointmentDataDTO] = None
+    missing_fields: List[str] = field(default_factory=list)
+    confirmation_token: Optional[str] = None
+    confirmation_fingerprint: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    created_appointment_id: Optional[str] = None
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+    expires_at: float = 0.0
+    last_error_code: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "flow_id": self.flow_id,
+            "version": self.version,
+            "status": self.status,
+            "step": self.step,
+            "current_step": self.current_step,
+            "visit_type": self.visit_type,
+            "specialty_id": self.specialty_id,
+            "doctor_id": self.doctor_id,
+            "slot_id": self.slot_id,
+            "selected_specialty_id": self.selected_specialty_id,
+            "selected_doctor_id": self.selected_doctor_id,
+            "selected_slot_id": self.selected_slot_id,
+            "collected_fields": dict(self.collected_fields),
+            "patient_data": self.patient_data.to_dict() if self.patient_data else None,
+            "missing_fields": list(self.missing_fields),
+            "confirmation_token": self.confirmation_token,
+            "confirmation_fingerprint": self.confirmation_fingerprint,
+            "idempotency_key": self.idempotency_key,
+            "created_appointment_id": self.created_appointment_id,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "expires_at": self.expires_at,
+            "last_error_code": self.last_error_code,
+        }
+
+
 @dataclass(frozen=True)
 class MockBookingReceiptDTO:
     appointment_id: str
@@ -399,5 +477,7 @@ __all__ = [
     "CitationDTO",
     "DegradationMetadataDTO",
     "MockBookingReceiptDTO",
+    "PatientAppointmentDataDTO",
+    "BookingFlowStateDTO",
 ]
 # === TASK:WP-009:END ===

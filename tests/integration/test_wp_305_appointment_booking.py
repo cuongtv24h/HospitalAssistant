@@ -142,6 +142,24 @@ def test_missing_data_advances_to_expected_collection_step_without_create() -> N
     assert tools.created_inputs == []
 
 
+def test_partial_patient_data_is_preserved_and_only_missing_birth_date_is_requested() -> None:
+    tools = FakeAppointmentTools()
+    pipeline = AppointmentBookingPipeline(appointment_tools=tools)
+    form = _complete_form()
+    form.pop("patient_dob")
+
+    response = pipeline.execute(_request(form))
+
+    assert response.conversation_state.current_step == "patient_data"
+    assert response.conversation_state.collected_fields["patient_name"] == "Nguyen Van A"
+    assert response.conversation_state.collected_fields["patient_phone"] == "0901234567"
+    assert response.conversation_state.collected_fields["has_insurance"] is True
+    assert response.conversation_state.collected_fields["visit_reason"] == "Đau ngực khi gắng sức"
+    assert response.conversation_state.missing_fields == ["patient_dob"]
+    assert "ngày sinh" in response.message
+    assert "họ tên" not in response.message
+
+
 def test_invalid_visit_type_is_edge_case_and_keeps_visit_type_step() -> None:
     tools = FakeAppointmentTools()
     pipeline = AppointmentBookingPipeline(appointment_tools=tools)
