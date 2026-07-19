@@ -36,6 +36,7 @@ export interface EmergencySafetyResponse {
 
 export interface EmergencyBannerProps {
   response: EmergencySafetyResponse
+  onSuggestedAction?: (action: SuggestedActionDTO) => void
 }
 
 function isMockConfigured(value?: string): boolean {
@@ -46,7 +47,7 @@ function formatLevel(level?: EmergencySafetyResponse['level']): string {
   return level ? `Level ${level}` : 'Emergency safety'
 }
 
-export function EmergencyBanner({ response }: EmergencyBannerProps) {
+export function EmergencyBanner({ response, onSuggestedAction }: EmergencyBannerProps) {
   if (response.outcome === 'not_triggered') {
     return null
   }
@@ -110,7 +111,7 @@ export function EmergencyBanner({ response }: EmergencyBannerProps) {
           <ul>
             {response.suggested_actions.map((action) => (
               <li key={action.action_id}>
-                <button type="button">{action.label}</button>
+                <button type="button" onClick={() => onSuggestedAction?.(action)}>{action.label}</button>
               </li>
             ))}
           </ul>

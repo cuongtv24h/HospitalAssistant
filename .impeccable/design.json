@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-19T03:35:42Z",
+  "title": "Design System: Trợ lý Bệnh viện Tim Hà Nội",
+  "extensions": {
+    "colorMeta": {
+      "guidance-blue": {
+        "role": "primary",
+        "displayName": "Xanh chỉ dẫn",
+        "canonical": "#006BB6",
+        "tonalRamp": ["#001D33", "#003A63", "#00528D", "#006BB6", "#3489C5", "#75B2DA", "#B6D9EC", "#EDF7FC"]
+      },
+      "guidance-blue-strong": {
+        "role": "primary",
+        "displayName": "Xanh chỉ dẫn đậm",
+        "canonical": "#00528D",
+        "tonalRamp": ["#001827", "#002E50", "#004474", "#00528D", "#3275A3", "#72A1C1", "#B4CEDF", "#EEF6FA"]
+      },
+      "reassurance-teal": {
+        "role": "secondary",
+        "displayName": "Xanh an tâm",
+        "canonical": "#007D78",
+        "tonalRamp": ["#002421", "#00443F", "#00635F", "#007D78", "#339B96", "#75C1BD", "#B7E2DF", "#EFFAF9"]
+      },
+      "reassurance-teal-strong": {
+        "role": "secondary",
+        "displayName": "Xanh an tâm đậm",
+        "canonical": "#00635F",
+        "tonalRamp": ["#001E1C", "#003734", "#004F4C", "#00635F", "#37857F", "#79ADA9", "#B9D6D4", "#F0F8F7"]
+      },
+      "night-ink": {
+        "role": "neutral",
+        "displayName": "Mực đêm",
+        "canonical": "#0B2538",
+        "tonalRamp": ["#071723", "#0B2538", "#1E3E52", "#355A6F", "#5F7C8C", "#91A6B1", "#C7D2D8", "#F2F6F8"]
+      },
+      "supporting-ink": {
+        "role": "neutral",
+        "displayName": "Mực hỗ trợ",
+        "canonical": "#355A6F",
+        "tonalRamp": ["#0B202D", "#183746", "#274D5E", "#355A6F", "#607B8B", "#91A5B0", "#C6D1D7", "#F2F6F8"]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Nền trò chuyện",
+        "canonical": "#EEF7FA",
+        "tonalRamp": ["#15272D", "#30464E", "#526B75", "#78939D", "#A4BBC3", "#C8DCE2", "#E1EEF2", "#EEF7FA"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Bề mặt trắng",
+        "canonical": "#FFFFFF",
+        "tonalRamp": ["#262626", "#454545", "#666666", "#8A8A8A", "#B0B0B0", "#D2D2D2", "#EEEEEE", "#FFFFFF"]
+      },
+      "surface-soft": {
+        "role": "neutral",
+        "displayName": "Bề mặt dịu",
+        "canonical": "#F7FBFD",
+        "tonalRamp": ["#20272A", "#3D484D", "#616D72", "#879399", "#ADB9BE", "#D0DADD", "#E8F0F3", "#F7FBFD"]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Đường phân cách",
+        "canonical": "#7AA6B8",
+        "tonalRamp": ["#17272D", "#2A444E", "#416370", "#598493", "#7AA6B8", "#A4C4D0", "#CDE0E7", "#F1F8FA"]
+      },
+      "focus": {
+        "role": "tertiary",
+        "displayName": "Cam tập trung",
+        "canonical": "#FFB020",
+        "tonalRamp": ["#362300", "#684300", "#9C6500", "#CF8800", "#FFB020", "#FFC96A", "#FFE2B2", "#FFF7E8"]
+      },
+      "success": {
+        "role": "secondary",
+        "displayName": "Xanh thành công",
+        "canonical": "#008A4D",
+        "tonalRamp": ["#002616", "#004A2A", "#006D3D", "#008A4D", "#36A974", "#79C99F", "#B9E5CF", "#EFFAF4"]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Đỏ nguy hiểm",
+        "canonical": "#B42318",
+        "tonalRamp": ["#350A06", "#65130D", "#8E1B13", "#B42318", "#CB554D", "#DF8E89", "#EFC6C3", "#FCEFED"]
+      },
+      "danger-soft": {
+        "role": "neutral",
+        "displayName": "Nền lỗi dịu",
+        "canonical": "#FFF1F0",
+        "tonalRamp": ["#301B1A", "#573735", "#805653", "#A97A76", "#CFA5A1", "#E7CAC7", "#F6E3E1", "#FFF1F0"]
+      },
+      "dark-canvas": {
+        "role": "neutral",
+        "displayName": "Nền tối",
+        "canonical": "#061B28",
+        "tonalRamp": ["#061018", "#061B28", "#153747", "#2D5566", "#527A8B", "#83A4B1", "#BDD0D7", "#EFF6F8"]
+      },
+      "dark-surface": {
+        "role": "neutral",
+        "displayName": "Bề mặt tối",
+        "canonical": "#0D2B3B",
+        "tonalRamp": ["#081721", "#0D2B3B", "#214757", "#3B6575", "#608697", "#91ACB8", "#C5D4DA", "#F2F7F9"]
+      },
+      "dark-text": {
+        "role": "neutral",
+        "displayName": "Chữ trên nền tối",
+        "canonical": "#F5FFFC",
+        "tonalRamp": ["#1B2925", "#354B44", "#557066", "#78978C", "#9FC0B5", "#C4DED6", "#E1F1EC", "#F5FFFC"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Tiêu đề ứng dụng và tiêu đề bước chính." },
+      "title": { "displayName": "Title", "purpose": "Tiêu đề card, lựa chọn và nhóm nội dung." },
+      "body": { "displayName": "Body", "purpose": "Câu trả lời, hướng dẫn và nội dung hội thoại." },
+      "label": { "displayName": "Label", "purpose": "Nút, nhãn trường và hành động." },
+      "caption": { "displayName": "Caption", "purpose": "Metadata, trạng thái phụ và ngày hiệu lực." }
+    },
+    "shadows": [
+      { "name": "shell-ambient", "value": "0 24px 62px rgba(11, 37, 56, 0.16)", "purpose": "Tách shell desktop khỏi nền; không dùng trên mobile toàn màn hình." },
+      { "name": "raised-surface", "value": "0 8px 20px rgba(11, 37, 56, 0.12)", "purpose": "Confirmation panel, tooltip hoặc menu thực sự nổi." },
+      { "name": "focus-ring", "value": "0 0 0 4px rgba(255, 176, 32, 0.28)", "purpose": "Tăng khả năng nhận biết focus, luôn đi cùng outline rõ." }
+    ],
+    "motion": [
+      { "name": "state-fast", "value": "150ms ease", "purpose": "Hover, pressed và thay đổi màu tức thời." },
+      { "name": "state-standard", "value": "200ms ease", "purpose": "Focus, mở/đóng và thay đổi trạng thái thành phần." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "700px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Hành động chính duy nhất trong một vùng tác vụ.",
+      "html": "<button class=\"ds-btn-primary\">Xác nhận đặt lịch</button>",
+      "css": ".ds-btn-primary { min-height: 44px; padding: 12px 16px; border: 0; border-radius: 12px; background: var(--primary, #006bb6); color: #fff; font: 700 14px/1.35 'Be Vietnam Pro', sans-serif; cursor: pointer; transition: background 150ms ease; } .ds-btn-primary:hover { background: var(--primary-strong, #00528d); } .ds-btn-primary:active { background: #004574; } .ds-btn-primary:focus-visible { outline: 4px solid var(--focus, #ffb020); outline-offset: 3px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Hành động phụ có affordance rõ nhưng không cạnh tranh với primary.",
+      "html": "<button class=\"ds-btn-secondary\">Chọn lại bác sĩ</button>",
+      "css": ".ds-btn-secondary { min-height: 44px; padding: 11px 15px; border: 1px solid var(--border, #7aa6b8); border-radius: 12px; background: var(--panel, #fff); color: var(--text, #0b2538); font: 700 14px/1.35 'Be Vietnam Pro', sans-serif; cursor: pointer; transition: background 150ms ease, border-color 150ms ease; } .ds-btn-secondary:hover { border-color: var(--primary, #006bb6); background: var(--panel-strong, #f7fbfd); } .ds-btn-secondary:active { background: #eef7fa; } .ds-btn-secondary:focus-visible { outline: 4px solid var(--focus, #ffb020); outline-offset: 3px; }"
+    },
+    {
+      "name": "Action Card",
+      "kind": "card",
+      "refersTo": "action-card",
+      "description": "Một lựa chọn tác vụ rõ ràng, phẳng ở trạng thái nghỉ.",
+      "html": "<button class=\"ds-action-card\"><span class=\"ds-action-card__title\">BHYT &amp; chi phí</span><span class=\"ds-action-card__copy\">Quyền lợi và thông tin chi phí chính thức</span></button>",
+      "css": ".ds-action-card { display: grid; gap: 4px; width: 280px; min-height: 72px; padding: 16px; text-align: left; border: 1px solid var(--border, #7aa6b8); border-radius: 12px; background: var(--panel, #fff); color: var(--text, #0b2538); cursor: pointer; transition: background 150ms ease, border-color 150ms ease; } .ds-action-card:hover { border-color: var(--primary, #006bb6); background: var(--panel-strong, #f7fbfd); } .ds-action-card:focus-visible { outline: 4px solid var(--focus, #ffb020); outline-offset: 3px; } .ds-action-card__title { font: 700 16px/1.35 'Be Vietnam Pro', sans-serif; } .ds-action-card__copy { color: var(--muted, #355a6f); font: 600 13px/1.4 'Be Vietnam Pro', sans-serif; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "text-input",
+      "description": "Trường nhập quen thuộc, dễ đọc và có focus rõ.",
+      "html": "<label class=\"ds-field\"><span>Họ và tên</span><input type=\"text\" placeholder=\"Nguyễn Văn A\"></label>",
+      "css": ".ds-field { display: grid; gap: 6px; color: var(--text, #0b2538); font: 700 14px/1.35 'Be Vietnam Pro', sans-serif; } .ds-field input { min-height: 44px; padding: 11px 12px; border: 1px solid var(--border, #7aa6b8); border-radius: 12px; background: var(--panel, #fff); color: var(--text, #0b2538); font: 400 16px/1.55 'Be Vietnam Pro', sans-serif; } .ds-field input:hover { border-color: var(--primary, #006bb6); } .ds-field input:focus-visible { outline: 4px solid var(--focus, #ffb020); outline-offset: 2px; border-color: var(--primary, #006bb6); }"
+    },
+    {
+      "name": "Assistant Message",
+      "kind": "custom",
+      "refersTo": "assistant-message",
+      "description": "Bề mặt đọc chính cho câu trả lời có căn cứ.",
+      "html": "<article class=\"ds-message\"><p>Bạn cần mang theo thẻ BHYT và giấy tờ tùy thân còn hiệu lực.</p><a href=\"#\">Xem nguồn chính thức</a></article>",
+      "css": ".ds-message { max-width: 68ch; padding: 13px 16px; border: 1px solid var(--border, #7aa6b8); border-radius: 8px 18px 18px; background: var(--panel, #fff); color: var(--text, #0b2538); font: 400 16px/1.55 'Be Vietnam Pro', sans-serif; } .ds-message p { margin: 0 0 10px; } .ds-message a { color: var(--primary-strong, #00528d); font-weight: 700; text-underline-offset: 2px; } .ds-message a:hover { text-decoration-thickness: 2px; } .ds-message a:focus-visible { outline: 4px solid var(--focus, #ffb020); outline-offset: 3px; }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Trạng thái ngắn có nhãn và biểu tượng, không phụ thuộc riêng vào màu.",
+      "html": "<span class=\"ds-status-chip\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m8 12 2.5 2.5L16 9\"/></svg>Đã xác nhận</span>",
+      "css": ".ds-status-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #79ada9; border-radius: 999px; background: var(--panel-strong, #f7fbfd); color: var(--teal-strong, #00635f); font: 700 13px/1.4 'Be Vietnam Pro', sans-serif; } .ds-status-chip svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }"
+    },
+    {
+      "name": "Conversation Header",
+      "kind": "nav",
+      "description": "Header gọn với nhận diện, trạng thái dịch vụ và utility action.",
+      "html": "<header class=\"ds-header\"><span class=\"ds-header__mark\">T</span><span class=\"ds-header__brand\"><strong>Trợ lý Bệnh viện</strong><small><i></i> Trực tuyến · Hỗ trợ 24/7</small></span><button aria-label=\"Cuộc trò chuyện mới\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 11a8 8 0 0 0-15-3L3 10m0-6v6h6M4 13a8 8 0 0 0 15 3l2-2m0 6v-6h-6\"/></svg></button></header>",
+      "css": ".ds-header { display: flex; align-items: center; gap: 12px; min-height: 68px; padding: 12px 16px; border-bottom: 1px solid var(--border, #7aa6b8); background: var(--panel, #fff); color: var(--text, #0b2538); font-family: 'Be Vietnam Pro', sans-serif; } .ds-header__mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: #effaf9; color: var(--teal-strong, #00635f); font-weight: 800; } .ds-header__brand { display: grid; gap: 3px; } .ds-header__brand strong { font-size: 17px; } .ds-header__brand small { color: var(--muted, #355a6f); font-size: 12px; } .ds-header__brand i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #008a4d; } .ds-header button { display: grid; place-items: center; width: 44px; height: 44px; margin-left: auto; border: 1px solid var(--border, #7aa6b8); border-radius: 12px; background: var(--panel, #fff); color: var(--text, #0b2538); cursor: pointer; } .ds-header button:hover { background: var(--panel-strong, #f7fbfd); border-color: var(--primary, #006bb6); } .ds-header button:focus-visible { outline: 4px solid var(--focus, #ffb020); outline-offset: 3px; } .ds-header svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Quầy hướng dẫn bình tâm",
+    "overview": "Giao diện phải rõ ràng như một quầy tiếp đón bệnh viện được tổ chức tốt, nhưng riêng tư và gần gũi như một cuộc trò chuyện một-một. Mỗi màn hình dẫn người dùng đến một câu trả lời hoặc một bước hành động cụ thể; hệ thống không phô diễn AI và không yêu cầu người dùng học cách sử dụng nó.\n\nMật độ thông tin vừa phải, thứ bậc dễ quét và các điều khiển sử dụng affordance quen thuộc. Màu sắc và chuyển động chỉ diễn đạt trạng thái. Hệ thống tuyệt đối không được giống chatbot AI màu mè hoặc sáo rỗng, đồng thời không được lạnh lẽo, dày đặc hay máy móc như phần mềm quản trị bệnh viện.",
+    "keyCharacteristics": [
+      "Điềm tĩnh, sáng và có trật tự.",
+      "Thân thiện với người lớn tuổi và người đang lo lắng.",
+      "Hành động chính rõ nhưng không lấn át nội dung.",
+      "Nguồn tham khảo, cảnh báo và bước xác nhận có phân cấp riêng.",
+      "Responsive theo cấu trúc; chuyển động chỉ phản hồi trạng thái."
+    ],
+    "rules": [
+      { "name": "The One Guidance Rule", "body": "Xanh chỉ dẫn là accent chính và không được phủ quá 10% một màn hình; độ hiếm làm cho hành động chính dễ nhận biết.", "section": "colors" },
+      { "name": "The No Decorative Gradient Rule", "body": "Gradient trang trí bị cấm. Một trạng thái chỉ được dùng một màu nền có chủ đích, không trộn xanh lam và teal để tạo cảm giác “AI”.", "section": "colors" },
+      { "name": "The Meaning Beyond Color Rule", "body": "Mọi trạng thái thành công, cảnh báo, lỗi và lựa chọn đều phải có nhãn chữ, icon hoặc thay đổi hình dạng; màu không bao giờ là tín hiệu duy nhất.", "section": "colors" },
+      { "name": "The Vietnamese First Rule", "body": "Không giảm cỡ chữ hoặc line-height để ép nội dung tiếng Việt vào card. Bố cục phải giãn ra trước khi khả năng đọc bị hy sinh.", "section": "typography" },
+      { "name": "The Quiet Hierarchy Rule", "body": "Phân cấp bằng trọng lượng, khoảng cách và màu chữ trước; cấm heading phóng đại hoặc display font trong giao diện tác vụ.", "section": "typography" },
+      { "name": "The Flat-by-Default Rule", "body": "Card và nút phẳng ở trạng thái nghỉ. Nếu mọi phần tử đều có bóng, không phần tử nào thực sự có thứ bậc.", "section": "elevation" },
+      { "name": "The Structural Motion Rule", "body": "Chuyển động kéo dài 150–250ms và chỉ diễn đạt hover, focus, mở/đóng hoặc thay đổi trạng thái. Animation trang trí và chuỗi xuất hiện dàn dựng bị cấm.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do dùng Xanh chỉ dẫn cho một hành động chính hoặc lựa chọn hiện tại trong mỗi vùng tác vụ.",
+      "Do giữ chữ nội dung ở 16px khi có thể và mọi vùng tương tác tối thiểu 44px.",
+      "Do dùng khoảng trắng, nền tonal và đường phân cách trước khi thêm bóng.",
+      "Do hiển thị nguồn, trạng thái, lỗi và bước tiếp theo bằng ngôn ngữ tiếng Việt trực tiếp.",
+      "Do tôn trọng `prefers-reduced-motion` và loại bỏ mọi chuyển động không cần thiết khi tùy chọn này được bật.",
+      "Do giữ bước xác nhận đặt lịch rõ ràng, tách biệt khỏi nội dung RAG và không tự động gửi thay người dùng."
+    ],
+    "donts": [
+      "Don't làm giao diện giống một chatbot AI màu mè hoặc sáo rỗng.",
+      "Don't dùng gradient trang trí, hiệu ứng chuyển động không phục vụ trạng thái hoặc chi tiết cố tạo cảm giác “công nghệ tương lai”.",
+      "Don't tạo cảm giác lạnh lẽo, dày đặc hoặc máy móc như phần mềm quản trị bệnh viện.",
+      "Don't đặt bóng, border dày và nền màu lên mọi card cùng lúc; nếu mọi thứ đều nổi, thứ bậc đã thất bại.",
+      "Don't truyền đạt thành công, cảnh báo, lỗi hoặc lựa chọn chỉ bằng màu sắc.",
+      "Don't dùng animation quay, nảy hoặc pulse cho icon utility khi hành động không thay đổi trạng thái hệ thống.",
+      "Don't ẩn nội dung cần thiết của chuyên khoa, bác sĩ hoặc bước xác nhận chỉ để giữ card thấp hơn."
+    ]
+  }
+}

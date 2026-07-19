@@ -98,7 +98,7 @@ export function InformationResponse({ response, onSuggestedAction }: Information
 
   if (isOutOfScopeRefusal) {
     return (
-      <article aria-label="Information assistance response">
+      <article className="info-response" aria-label="Information assistance response">
         <div className="markdown-answer" aria-label="Answer content">
           <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} skipHtml>
             {response.message}
@@ -121,11 +121,11 @@ export function InformationResponse({ response, onSuggestedAction }: Information
   })
 
   return (
-    <article aria-label="Information assistance response">
+    <article className="info-response" aria-label="Information assistance response">
       <header>
-        <p aria-label="Response outcome">{outcomeLabel(response.outcome)}</p>
+        <p className="info-response__outcome" aria-label="Response outcome">{outcomeLabel(response.outcome)}</p>
         {showUncertainNotice ? (
-          <p role="alert">
+          <p className="info-response__notice" role="alert">
             Nội dung này không được hiển thị như câu trả lời chắc chắn. Vui lòng xem hướng dẫn tiếp theo hoặc cung cấp
             thêm thông tin.
           </p>
@@ -139,7 +139,7 @@ export function InformationResponse({ response, onSuggestedAction }: Information
       </div>
 
       {!isBooking ? (
-        <section aria-label="Citations">
+        <section className="info-response__citations" aria-label="Citations">
           <h3>Nguồn tham khảo</h3>
           {visibleCitations.length > 0 ? (
             <ul>
@@ -156,7 +156,13 @@ export function InformationResponse({ response, onSuggestedAction }: Information
                       <span>{label}</span>
                     )}
                     {citation.effective_date ? <span> — hiệu lực {citation.effective_date}</span> : null}
-                    {citation.excerpt ? <blockquote>{citation.excerpt}</blockquote> : null}
+                    {citation.excerpt ? (
+                      <blockquote>
+                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} skipHtml>
+                          {citation.excerpt}
+                        </ReactMarkdown>
+                      </blockquote>
+                    ) : null}
                   </li>
                 )
               })}
@@ -168,7 +174,7 @@ export function InformationResponse({ response, onSuggestedAction }: Information
       ) : null}
 
       {visibleActions.length > 0 ? (
-        <section aria-label="Suggested actions">
+        <section className="info-response__actions" aria-label="Suggested actions">
           <h3>Hành động tiếp theo</h3>
           <ul>
             {visibleActions.map((action) => (

@@ -1,6 +1,6 @@
 // === TASK:WP-504:START ===
-import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { EmergencyBanner, type EmergencySafetyResponse } from './EmergencyBanner'
 
 const triggeredLevelOne: EmergencySafetyResponse = {
@@ -47,6 +47,14 @@ describe('EmergencyBanner', () => {
     expect(within(handoff).getByRole('button', { name: 'Gọi bệnh viện' })).toBeInTheDocument()
     expect(within(banner).getByText('Mã sự kiện: evt-emergency-1')).toBeInTheDocument()
     expect(within(banner).getByText(/không phải là chẩn đoán y khoa/i)).toBeInTheDocument()
+  })
+
+  it('wires Level-1 suggested actions to the host shell', () => {
+    const onSuggestedAction = vi.fn()
+    render(<EmergencyBanner response={triggeredLevelOne} onSuggestedAction={onSuggestedAction} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gọi bệnh viện' }))
+    expect(onSuggestedAction).toHaveBeenCalledWith(triggeredLevelOne.suggested_actions?.[0])
   })
 
   it('uses hotline and address fallback fields with mock configuration warnings', () => {
