@@ -585,32 +585,10 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
             "messages": state.get("messages", []) + [AIMessage(content=fallback)]
         }
 
-    model_name = os.environ.get("AGENT_MODEL", "gpt-5-mini")
-    openai_key = config.get("configurable", {}).get("openai_api_key")
-    llm_options = {
-        "model": model_name,
-        "openai_api_key": openai_key,
-        "temperature": 0.0,
-        "max_retries": 0,
-    }
-    if remaining is not None:
-        llm_options["timeout"] = max(0.1, remaining)
-    llm = ChatOpenAI(**llm_options)
-
+    provider_config = config.get("configurable", {})
     action = classify_action(state)
     booking_step = state.get("booking_step")
     tools = _allowed_tools_for_action(action)
-    if tools:
-        forced_tool = tools[0].name if len(tools) == 1 and action != "read_operational_data" else None
-        if forced_tool:
-            try:
-                llm_with_tools = llm.bind_tools(tools, tool_choice=forced_tool)
-            except TypeError:  # Compatibility with lightweight test doubles.
-                llm_with_tools = llm.bind_tools(tools)
-        else:
-            llm_with_tools = llm.bind_tools(tools)
-    else:
-        llm_with_tools = llm
 
     # System instruction prompt loaded from file
     prompt_path = ROOT / "config" / "prompts" / "hospital-agent.md"
@@ -653,30 +631,49 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
             )
         input_msgs.append(SystemMessage(content=repair_instruction))
 
+    candidates = provider_config.get("llm_candidates") or [{
+        "model": provider_config.get("llm_model") or os.environ.get("AGENT_MODEL", "gpt-5-mini"),
+        "api_key": provider_config.get("llm_api_key") or provider_config.get("openai_api_key"),
+        "base_url": provider_config.get("llm_base_url"),
+        "provider": "legacy",
+    }]
     started_at = time.monotonic()
-    max_attempts = max(1, int(os.environ.get("AGENT_LLM_MAX_ATTEMPTS", "3")))
     response = None
     last_llm_error = None
-    for attempt in range(1, max_attempts + 1):
+    for candidate in candidates:
+        llm_options = {
+            "model": candidate.get("model"),
+            "openai_api_key": candidate.get("api_key"),
+            "temperature": 0.0,
+            "max_retries": 0,
+        }
+        if candidate.get("base_url"):
+            llm_options["base_url"] = candidate["base_url"]
+        if remaining is not None:
+            llm_options["timeout"] = max(0.1, remaining)
+        llm = ChatOpenAI(**llm_options)
+        if tools:
+            forced_tool = tools[0].name if len(tools) == 1 and action != "read_operational_data" else None
+            if forced_tool:
+                try:
+                    llm_with_tools = llm.bind_tools(tools, tool_choice=forced_tool)
+                except TypeError:
+                    llm_with_tools = llm.bind_tools(tools)
+            else:
+                llm_with_tools = llm.bind_tools(tools)
+        else:
+            llm_with_tools = llm
         attempt_started_at = time.monotonic()
-        _trace(config, "llm.agent.attempt.start", model=model_name, call_count=call_count, attempt=attempt, max_attempts=max_attempts)
         try:
             response = llm_with_tools.invoke(input_msgs)
-            _trace(config, "llm.agent.attempt.complete", started_at=attempt_started_at, attempt=attempt, tool_call_count=len(response.tool_calls or []))
+            _trace(config, "llm.agent.attempt.complete", started_at=attempt_started_at, provider=candidate.get("provider"), tool_call_count=len(response.tool_calls or []))
             break
         except Exception as exc:
             last_llm_error = exc
-            _trace(
-                config,
-                "llm.agent.attempt.error",
-                started_at=attempt_started_at,
-                attempt=attempt,
-                error_type=type(exc).__name__,
-                will_retry=attempt < max_attempts,
-            )
+            _trace(config, "llm.agent.attempt.error", started_at=attempt_started_at, provider=candidate.get("provider"), error_type=type(exc).__name__)
     if response is None:
         fallback = "Tạm thời không thể xử lý yêu cầu do dịch vụ ngôn ngữ không khả dụng. Vui lòng thử lại sau."
-        _trace(config, "fallback", started_at=started_at, component="agent_llm", reason="retries_exhausted", error_type=type(last_llm_error).__name__ if last_llm_error else None)
+        _trace(config, "fallback", started_at=started_at, component="agent_llm", reason="providers_exhausted", error_type=type(last_llm_error).__name__ if last_llm_error else None)
         return {
             "final_response": fallback,
             "messages": state.get("messages", []) + [AIMessage(content=fallback)],

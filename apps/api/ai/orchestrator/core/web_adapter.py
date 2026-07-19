@@ -23,6 +23,7 @@ from apps.api.foundation.appointments.tools.service import (
 )
 from apps.api.foundation.operational_repository import OperationalRepository
 from apps.api.foundation.session.service import SessionService
+from apps.api.ai.providers.llm_provider import get_agent_llm_configs
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -49,8 +50,7 @@ class AgentInformationAssistanceAdapter:
     def __init__(self, *, appointment_tools: Any = None) -> None:
         if not os.environ.get("DATABASE_URL"):
             raise ValueError("DATABASE_URL is required for the hospital agent")
-        if not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError("OPENAI_API_KEY is required for the hospital agent")
+        self._llm_configs = get_agent_llm_configs()
         self._embedder = _QueryEmbedder()
         repository = OperationalRepository(os.environ["DATABASE_URL"])
         self._session_service = SessionService(repository=repository)
@@ -119,7 +119,10 @@ class AgentInformationAssistanceAdapter:
         config = {
             "configurable": {
                 "thread_id": request.session_id,
-                "openai_api_key": os.environ["OPENAI_API_KEY"],
+                # Generic OpenAI-compatible runtime configuration. This can
+                # point at Groq, Gemini or OpenRouter in the configured
+                # fallback order; it is never returned to a client.
+                "llm_candidates": self._llm_configs,
                 "jina_api_key": os.environ.get("JINA_API_KEY"),
                 "embedder": self._embedder,
                 "top_n": int(os.environ.get("RAG_TOP_N", "5")),

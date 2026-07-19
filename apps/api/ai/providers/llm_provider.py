@@ -545,8 +545,8 @@ def create_runtime_provider_chain(
 ) -> LLMProviderChain:
     """Create a real provider chain in the configured, editable order.
 
-    ``LLM_PROVIDER_ORDER`` is a comma-separated list of ``gemini``,
-    ``openrouter`` and ``groq``. Changing the list changes primary/fallback
+    ``LLM_PROVIDER_ORDER`` is a comma-separated list of ``groq``, ``gemini``,
+    ``openrouter`` and ``openai``. Changing the list changes primary/fallback
     order without code changes. Legacy PRIMARY/FALLBACK variable names remain
     supported so existing Pilot environments continue to work.
     """
@@ -555,6 +555,7 @@ def create_runtime_provider_chain(
         "gemini": {"name": "gemini", "model": "gemini-2.5-flash", "base_url": "https://generativelanguage.googleapis.com/v1beta/openai"},
         "openrouter": {"name": "openrouter", "model": "google/gemini-2.5-flash", "base_url": "https://openrouter.ai/api/v1"},
         "groq": {"name": "groq", "model": "llama-3.3-70b-versatile", "base_url": "https://api.groq.com/openai/v1"},
+        "openai": {"name": "openai", "model": "gpt-4o-mini", "base_url": "https://api.openai.com/v1"},
     }
     order_value = env.get("LLM_PROVIDER_ORDER", "").strip()
     if order_value:
@@ -569,6 +570,8 @@ def create_runtime_provider_chain(
             provider_order.append("openrouter")
         if env.get("LLM_GROQ_API_KEY") or env.get("LLM_GROK_API_KEY") or env.get("GROQ_API_KEY"):
             provider_order.append("groq")
+        if env.get("LLM_OPENAI_API_KEY") or env.get("OPENAI_API_KEY"):
+            provider_order.append("openai")
     # ``grok`` was used in an early configuration draft for Groq. Accept it
     # as a migration alias, but normalize the resolved runtime identity.
     provider_order = ["groq" if name == "grok" else name for name in provider_order]
@@ -584,6 +587,7 @@ def create_runtime_provider_chain(
         "gemini": ("LLM_PRIMARY_API_KEY", "GEMINI_API_KEY"),
         "openrouter": ("LLM_FALLBACK_API_KEY", "OPENROUTER_API_KEY"),
         "groq": ("LLM_GROK_API_KEY", "GROQ_API_KEY"),
+        "openai": ("OPENAI_API_KEY",),
     }
     legacy_prefixes = {"gemini": "PRIMARY", "openrouter": "FALLBACK", "groq": "GROK"}
     providers: List[BaseLLMProvider] = []
@@ -625,6 +629,39 @@ def create_runtime_provider_chain(
     if not providers:
         raise ValueError("No real LLM provider is configured")
     return LLMProviderChain(providers)
+
+
+def get_primary_agent_llm_config(
+    environment: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """Return private runtime options for the LangGraph OpenAI-compatible client.
+
+    This is an internal composition helper. Callers must never expose the
+    returned API key through an endpoint, log entry or client-facing DTO.
+    """
+    return get_agent_llm_configs(environment)[0]
+
+
+def get_agent_llm_configs(
+    environment: Optional[Dict[str, str]] = None,
+) -> List[Dict[str, str]]:
+    """Return ordered private options for the LangGraph tool-calling agent.
+
+    The order is exactly ``LLM_PROVIDER_ORDER``. The agent retries the next
+    candidate only after a provider invocation fails; keys remain server-side.
+    """
+    chain = create_runtime_provider_chain(environment)
+    configs: List[Dict[str, str]] = []
+    for provider in chain._providers:
+        if not isinstance(provider, OpenAICompatibleLLMProvider):
+            raise ValueError("Runtime LLM is not OpenAI-compatible")
+        configs.append({
+            "api_key": provider._api_key,
+            "base_url": provider._base_url,
+            "model": provider.model,
+            "provider": provider.name,
+        })
+    return configs
 
 
 # ---------------------------------------------------------------------------
@@ -753,6 +790,7 @@ __all__ = [
     "LLMProviderChain",
     "create_mock_provider_chain",
     "create_runtime_provider_chain",
+    "get_agent_llm_configs",
     "LLM_TIMEOUT",
     "LLM_RATE_LIMITED",
     "LLM_CONTENT_FILTERED",

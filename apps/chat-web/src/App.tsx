@@ -34,24 +34,21 @@ function Icon({ name }: { name: IconName }) {
 }
 
 const quickActions = [
-  { id: 'price', icon: 'banknote', title: 'Giá dịch vụ', prompt: 'Cho tôi biết bảng giá dịch vụ kỹ thuật.' },
-  { id: 'process', icon: 'clipboard', title: 'Quy trình khám', prompt: 'Hướng dẫn quy trình tiếp đón và khám bệnh.' },
-  { id: 'insurance', icon: 'shield-check', title: 'Thông tin BHYT', prompt: 'Tôi cần hướng dẫn khám chữa bệnh bằng BHYT.' },
-  { id: 'booking', icon: 'calendar-plus', title: 'Đặt lịch khám', prompt: '' },
-  { id: 'status', icon: 'calendar-search', title: 'Tra cứu lịch hẹn', prompt: '' },
-  { id: 'emergency', icon: 'alert-triangle', title: 'Tình huống khẩn cấp', prompt: 'Tôi cần hỗ trợ khẩn cấp.' },
+  { id: 'appointment', icon: 'calendar-plus', title: 'Đặt hoặc tra cứu lịch hẹn', subtitle: 'Đặt lịch mới, xem lịch trống, tra mã hẹn', prompt: '' },
+  { id: 'preparation', icon: 'clipboard', title: 'Chuẩn bị đi khám / tái khám', subtitle: 'Giấy tờ, quy trình và những điều cần biết', prompt: 'Hướng dẫn tôi chuẩn bị đi khám hoặc tái khám.' },
+  { id: 'insurance_cost', icon: 'shield-check', title: 'BHYT & chi phí', subtitle: 'Quyền lợi BHYT và thông tin chi phí chính thức', prompt: 'Tư vấn cho tôi về BHYT và chi phí khám bệnh dựa trên nguồn chính thức.' },
+  { id: 'doctor_info', icon: 'medical-cross', title: 'Bác sĩ, khoa & giờ làm việc', subtitle: 'Tìm bác sĩ, chuyên khoa và lịch làm việc', prompt: 'Cho tôi thông tin về bác sĩ, chuyên khoa và giờ làm việc.' },
 ] as const
 
 const onboardingMessages = [
-  'Xin chào bạn, tôi là trợ lý Emy!',
-  'Rất vui được hỗ trợ bạn.',
-  'Bạn cần tôi hỗ trợ điều gì?',
+  'Xin chào! Tôi là trợ lý AI của Bệnh viện Tim Hà Nội.',
+  'Bạn đang cần tôi hỗ trợ về vấn đề gì?',
   'Bạn có thể chọn một trong các mục dưới đây hoặc nhập câu hỏi bằng ngôn ngữ tự nhiên để được tư vấn.',
 ] as const
 
 function App() {
   const [sessionId, setSessionId] = useState(() => `web-${crypto.randomUUID()}`)
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (globalThis.localStorage?.getItem('app-theme') as 'dark' | 'light') || 'light')
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<'chat' | 'booking' | 'status'>('chat')
   const [loading, setLoading] = useState(false)
@@ -59,7 +56,7 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [onboardingCycle, setOnboardingCycle] = useState(0)
   const [onboardingComplete, setOnboardingComplete] = useState(false)
-  const [welcomeTyping, setWelcomeTyping] = useState(true)
+  const [welcomeTyping, setWelcomeTyping] = useState(false)
   const [specialties, setSpecialties] = useState<Specialty[]>([])
   const [doctors, setDoctors] = useState<Doctor[]>([])
   const [slots, setSlots] = useState<AvailableSlot[]>([])
@@ -72,55 +69,18 @@ function App() {
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    let cancelled = false
-    const timers: number[] = []
-    const isTest = import.meta.env.TEST
-    
-    const typingDelay = isTest ? 0 : 1200
-    const readingDelay = isTest ? 0 : 1000
-    const revealDelay = isTest ? 0 : 1000
-    
-    const wait = (duration: number) => new Promise<void>((resolve) => {
-      if (duration <= 0) resolve()
-      else timers.push(window.setTimeout(resolve, duration))
-    })
-
-    async function playWelcome() {
-      setMessages([])
-      setOnboardingComplete(false)
-      setWelcomeTyping(false)
-
-      for (let index = 0; index < onboardingMessages.length; index += 1) {
-        setWelcomeTyping(true)
-        await wait(typingDelay)
-        if (cancelled) return
-        
-        setWelcomeTyping(false)
-        setMessages((current) => [...current, {
-          id: `welcome-${onboardingCycle}-${index}`,
-          side: 'assistant',
-          text: onboardingMessages[index],
-        }])
-        
-        if (index < onboardingMessages.length - 1) {
-          await wait(readingDelay)
-        } else {
-          await wait(revealDelay)
-        }
-      }
-
-      setOnboardingComplete(true)
-    }
-
-    void playWelcome()
-    return () => {
-      cancelled = true
-      timers.forEach((timer) => window.clearTimeout(timer))
-    }
+    setWelcomeTyping(false)
+    setMessages(onboardingMessages.map((text, index) => ({
+      id: `welcome-${onboardingCycle}-${index}`,
+      side: 'assistant',
+      text,
+    })))
+    setOnboardingComplete(true)
   }, [onboardingCycle])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
+    globalThis.localStorage?.setItem('app-theme', theme)
   }, [theme])
 
   useEffect(() => {
@@ -204,16 +164,15 @@ function App() {
     setMode('chat')
     setMessages([])
     setOnboardingComplete(false)
-    setWelcomeTyping(true)
+    setWelcomeTyping(false)
     setSessionId(`web-${crypto.randomUUID()}`)
     setOnboardingCycle((current) => current + 1)
   }
 
   function chooseAction(action: typeof quickActions[number]) {
     setError(null)
-    if (action.id === 'booking') { setMode('booking'); setBookingStep('specialty'); return }
-    if (action.id === 'status') { setMode('status'); return }
-    void execute(action.id === 'emergency' ? 'emergency_safety' : 'information_assistance', action.prompt)
+    if (action.id === 'appointment') { setMode('booking'); setBookingStep('specialty'); return }
+    void execute('information_assistance', action.prompt)
   }
 
   function appendDictatedText(text: string) {
@@ -235,11 +194,11 @@ function App() {
 
   return <main className="chat-page" aria-label="Hospital Assistant chat">
     <section className="chat-shell">
-      <header className="chat-header"><div className="brand-mark"><Icon name="medical-cross" /></div><div><h1>Trợ lý Bệnh viện</h1><span><i /> Trực tuyến · Hỗ trợ 24/7</span></div><button className="new-chat" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} style={{ marginLeft: 'auto', padding: '9px', borderRadius: '50%', width: '38px', height: '38px', display: 'grid', placeItems: 'center' }} aria-label="Đổi giao diện"><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button><button className="new-chat" style={{ marginLeft: '8px' }} onClick={restartConversation}><Icon name="refresh" />Cuộc trò chuyện mới</button></header>
+      <header className="chat-header"><div className="brand-mark brand-mark--image"><img src="/agent-avatar.png" alt="Hospital Assistant" /></div><div><h1>Trợ lý Bệnh viện</h1><span><i /> Trực tuyến · Hỗ trợ 24/7</span></div><button className="new-chat" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} style={{ marginLeft: 'auto', padding: '9px', borderRadius: '50%', width: '38px', height: '38px', display: 'grid', placeItems: 'center' }} aria-label="Đổi giao diện"><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button><button className="new-chat" style={{ marginLeft: '8px' }} onClick={restartConversation}><Icon name="refresh" />Cuộc trò chuyện mới</button></header>
       <section className={`conversation ${isWelcomeExperience ? 'conversation--welcome' : ''} ${mode === 'booking' && bookingStep === 'specialty' ? 'conversation--booking' : ''} ${mode === 'status' ? 'conversation--status' : ''}`} aria-live="polite">
-        {messages.map((item) => <article key={item.id} className={`message ${item.side} ${item.id.startsWith('welcome-') ? 'message--welcome' : ''}`}>{!item.id.startsWith('welcome-') ? <div className="avatar"><Icon name={item.side === 'assistant' ? 'medical-cross' : 'user'} /></div> : null}<div className="bubble">{item.text ? <p>{item.text}</p> : null}{item.envelope ? renderEnvelope(item.envelope) : null}</div></article>)}
+        {messages.map((item) => <article key={item.id} className={`message ${item.side} ${item.id.startsWith('welcome-') ? 'message--welcome' : ''}`}>{!item.id.startsWith('welcome-') ? <div className={`avatar ${item.side === 'assistant' ? 'avatar--image' : ''}`}>{item.side === 'assistant' ? <img src="/agent-avatar.png" alt="AI" /> : <Icon name="user" />}</div> : null}<div className="bubble">{item.text ? <p>{item.text}</p> : null}{item.envelope ? renderEnvelope(item.envelope) : null}</div></article>)}
         {isWelcomeExperience && welcomeTyping ? <div className="typing" aria-label="Emy đang nhập"><i /><i /><i /> Emy đang nhập…</div> : null}
-        {isWelcomeExperience && onboardingComplete ? <div className="quick-actions-wrapper"><section className="quick-actions quick-actions--revealed" aria-label="Gợi ý hỗ trợ"><div>{quickActions.map((action) => <button key={action.id} onClick={() => chooseAction(action)}><b><Icon name={action.icon} /></b><span>{action.title}</span><small><Icon name="chevron-right" /></small></button>)}</div></section></div> : null}
+        {isWelcomeExperience && onboardingComplete ? <div className="quick-actions-wrapper"><section className="quick-actions" aria-label="Gợi ý hỗ trợ"><div>{quickActions.map((action) => <button key={action.id} data-flow={action.id} onClick={() => chooseAction(action)}><b><Icon name={action.icon} /></b><span><strong>{action.title}</strong><br /><em>{action.subtitle}</em></span><small><Icon name="chevron-right" /></small></button>)}</div></section></div> : null}
         {mode === 'booking' ? <section className={`guided-card ${bookingStep === 'specialty' ? 'guided-card--specialty' : ''}`} aria-label="Đặt lịch khám"><button className="back-link" onClick={() => setMode('chat')}><Icon name="arrow-left" />Quay lại</button><p className="eyebrow">ĐẶT LỊCH KHÁM · BƯỚC {bookingStep === 'specialty' ? '1' : bookingStep === 'doctor' ? '2' : bookingStep === 'slot' ? '3' : '4'}/4</p>
           {bookingStep === 'specialty' ? <><h2>Chọn chuyên khoa</h2><div className="choice-grid">{specialties.map((x) => <button onClick={() => { setBooking({ ...booking, specialty_id: x.specialty_id, doctor_id: '', slot_id: '' }); setBookingStep('doctor') }} key={x.specialty_id}><b>{x.name}</b><span>{x.description || 'Tư vấn và khám theo chuyên khoa'}</span></button>)}</div></> : null}
           {bookingStep === 'doctor' ? <><h2>Chọn bác sĩ</h2><div className="choice-grid">{doctors.map((x) => <button onClick={() => { setBooking({ ...booking, doctor_id: x.doctor_id, slot_id: '' }); setBookingStep('slot') }} key={x.doctor_id}><b>{x.title} {x.full_name}</b><span>{x.profile_summary || 'Bác sĩ chuyên khoa'}</span></button>)}</div><button className="text-button" onClick={() => setBookingStep('specialty')}>Chọn lại chuyên khoa</button></> : null}

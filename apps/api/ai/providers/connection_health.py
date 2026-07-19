@@ -14,11 +14,13 @@ _DEFAULTS = {
     "gemini": {"model": "gemini-2.5-flash", "base_url": "https://generativelanguage.googleapis.com/v1beta/openai"},
     "openrouter": {"model": "google/gemini-2.5-flash", "base_url": "https://openrouter.ai/api/v1"},
     "groq": {"model": "llama-3.3-70b-versatile", "base_url": "https://api.groq.com/openai/v1"},
+    "openai": {"model": "gpt-4o-mini", "base_url": "https://api.openai.com/v1"},
 }
 _LEGACY_KEYS = {
     "gemini": ("LLM_PRIMARY_API_KEY", "GEMINI_API_KEY"),
     "openrouter": ("LLM_FALLBACK_API_KEY", "OPENROUTER_API_KEY"),
     "groq": ("LLM_GROK_API_KEY", "GROQ_API_KEY"),
+    "openai": ("OPENAI_API_KEY",),
 }
 
 
