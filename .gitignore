@@ -42,6 +42,7 @@ allure-results/
 allure-report/
 logs/
 *.log
+migration-reports/
 tmp/
 temp/
 .cache/
@@ -70,3 +71,5 @@ scripts/*.zip
 start-local-static.bat
 stop-local-static.bat
 agent.md
+
+hospital_assistant/

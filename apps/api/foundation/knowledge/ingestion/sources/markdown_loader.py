@@ -1,4 +1,5 @@
 # === TASK:WP-008:START ===
+import yaml
 from pathlib import Path
 from typing import Dict, Tuple, Any
 
@@ -10,11 +11,11 @@ def read_markdown(path: Path) -> Tuple[Dict[str, Any], str]:
     if content.startswith("---"):
         parts = content.split("---", 2)
         if len(parts) >= 3:
-            fm_text = parts[1].strip()
+            fm_text = parts[1]
             body = parts[2].strip()
-            for line in fm_text.split("\n"):
-                if ":" in line:
-                    key, _, val = line.partition(":")
-                    fm[key.strip()] = val.strip()
+            try:
+                fm = yaml.safe_load(fm_text) or {}
+            except Exception:
+                fm = {}
     return fm, body
 # === TASK:WP-008:END ===

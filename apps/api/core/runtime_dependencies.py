@@ -94,6 +94,8 @@ def create_supabase_knowledge_repository(
     if not database_url:
         raise RuntimeDependencyError("DATABASE_URL is required for RAG retrieval")
     psycopg, dict_row = _load_psycopg()
+    from apps.api.foundation.knowledge.ingestion.persistence.postgres import psycopg_connection_url
+    connection_url = psycopg_connection_url(database_url)
 
     def search_chunks(*, embedding, domain_filter, top_k, threshold):
         vector = _vector_literal(embedding)
@@ -109,7 +111,7 @@ def create_supabase_knowledge_repository(
                    domain.domain_code AS domain,
                    COALESCE(chunk.sub_topic, '') AS sub_topic,
                    chunk.source_id,
-                   COALESCE(chunk.metadata->>'source_section', '') AS source_section,
+                   COALESCE(chunk.metadata->>'section_path', chunk.metadata->>'source_section', '') AS source_section,
                    COALESCE(chunk.page_numbers->>0, '') AS source_page,
                    chunk.source_version AS version,
                    chunk.is_active,
@@ -117,19 +119,27 @@ def create_supabase_knowledge_repository(
                    COALESCE(chunk.effective_date::text, '') AS effective_date,
                    chunk.tags,
                    COALESCE((chunk.metadata->>'is_mock')::boolean, false) AS is_mock,
-                   true AS answerable,
-                   chunk.source_path
+                   COALESCE((chunk.metadata->>'answerable')::boolean, true) AS answerable,
+                   chunk.source_path,
+                   chunk.metadata
               FROM knowledge_chunks AS chunk
               JOIN knowledge_domains AS domain ON domain.domain_id = chunk.domain_id
              WHERE chunk.is_active = true
                AND chunk.approval_status IN ('approved_for_pilot', 'approved')
+               AND COALESCE((chunk.metadata->>'answerable')::boolean, true) IS TRUE
+               AND COALESCE((chunk.metadata->>'extraction_incomplete')::boolean, false) IS FALSE
+               AND EXISTS (
+                   SELECT 1 FROM corpus_releases AS release
+                    WHERE release.release_id = chunk.metadata->>'corpus_release_id'
+                      AND release.status = 'active'
+               )
                AND (chunk.effective_date IS NULL OR chunk.effective_date <= CURRENT_DATE)
                AND (1 - (chunk.embedding <=> %s::vector)) >= %s
         """ + filters + " ORDER BY chunk.embedding <=> %s::vector LIMIT %s"
         # The distance vector occurs twice; retain a clear parameter order.
         parameters = [vector, threshold] + ([domain_filter] if domain_filter else []) + [vector, top_k]
         try:
-            with psycopg.connect(database_url, row_factory=dict_row, connect_timeout=5) as connection:
+            with psycopg.connect(connection_url, row_factory=dict_row, connect_timeout=5, prepare_threshold=None) as connection:
                 with connection.cursor() as cursor:
                     # The Pilot index has 100 lists over a modest corpus. A
                     # higher probe count prevents approximate ivfflat scans
@@ -142,23 +152,31 @@ def create_supabase_knowledge_repository(
 
     def get_chunk(chunk_id: str):
         try:
-            with psycopg.connect(database_url, row_factory=dict_row, connect_timeout=5) as connection:
+            with psycopg.connect(connection_url, row_factory=dict_row, connect_timeout=5, prepare_threshold=None) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
                         SELECT chunk.chunk_id::text AS chunk_id, chunk.content,
                                domain.domain_code AS domain, COALESCE(chunk.sub_topic, '') AS sub_topic,
-                               chunk.source_id, COALESCE(chunk.metadata->>'source_section', '') AS source_section,
+                               chunk.source_id, COALESCE(chunk.metadata->>'section_path', chunk.metadata->>'source_section', '') AS source_section,
                                COALESCE(chunk.page_numbers->>0, '') AS source_page,
                                chunk.source_version AS version, chunk.is_active, chunk.approval_status,
                                COALESCE(chunk.effective_date::text, '') AS effective_date, chunk.tags,
                                COALESCE((chunk.metadata->>'is_mock')::boolean, false) AS is_mock,
-                               true AS answerable, chunk.source_path
+                               COALESCE((chunk.metadata->>'answerable')::boolean, true) AS answerable,
+                               chunk.source_path, chunk.metadata
                           FROM knowledge_chunks AS chunk
                           JOIN knowledge_domains AS domain ON domain.domain_id = chunk.domain_id
                          WHERE chunk.chunk_id = %s::uuid
                            AND chunk.is_active = true
                            AND chunk.approval_status IN ('approved_for_pilot', 'approved')
+                           AND COALESCE((chunk.metadata->>'answerable')::boolean, true) IS TRUE
+                           AND COALESCE((chunk.metadata->>'extraction_incomplete')::boolean, false) IS FALSE
+                           AND EXISTS (
+                               SELECT 1 FROM corpus_releases AS release
+                                WHERE release.release_id = chunk.metadata->>'corpus_release_id'
+                                  AND release.status = 'active'
+                           )
                         """,
                         [chunk_id],
                     )
@@ -170,7 +188,7 @@ def create_supabase_knowledge_repository(
         if not chunk_ids:
             return []
         try:
-            with psycopg.connect(database_url, row_factory=dict_row, connect_timeout=5) as connection:
+            with psycopg.connect(connection_url, row_factory=dict_row, connect_timeout=5, prepare_threshold=None) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """

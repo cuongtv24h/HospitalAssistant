@@ -298,6 +298,16 @@ class SearchCandidateDTO:
     vector_rank: Optional[int] = None
     lexical_rank: Optional[int] = None
     fused_rank: Optional[int] = None
+    source_kind: str = "web"
+    title: str = ""
+    display_name: str = ""
+    source_url: Optional[str] = None
+    publisher: str = "Bệnh viện Tim Hà Nội"
+    section_path: str = ""
+    crawled_at: Optional[str] = None
+    effective_date: Optional[str] = None
+    corpus_release_id: str = ""
+    answerable: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -312,6 +322,16 @@ class SearchCandidateDTO:
             "vector_rank": self.vector_rank,
             "lexical_rank": self.lexical_rank,
             "fused_rank": self.fused_rank,
+            "source_kind": self.source_kind,
+            "title": self.title,
+            "display_name": self.display_name,
+            "source_url": self.source_url,
+            "publisher": self.publisher,
+            "section_path": self.section_path,
+            "crawled_at": self.crawled_at,
+            "effective_date": self.effective_date,
+            "corpus_release_id": self.corpus_release_id,
+            "answerable": self.answerable,
         }
 
 
@@ -338,6 +358,13 @@ class CitationDTO:
     source_page: str
     version: str
     matched_text: str
+    source_kind: str = "web"
+    title: str = ""
+    display_name: str = ""
+    url: Optional[str] = None
+    publisher: str = "Bệnh viện Tim Hà Nội"
+    effective_date: Optional[str] = None
+    crawled_at: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -348,7 +375,15 @@ class CitationDTO:
             "source_page": self.source_page,
             "version": self.version,
             "matched_text": self.matched_text,
+            "source_kind": self.source_kind,
+            "title": self.title,
+            "display_name": self.display_name,
+            "url": self.url,
+            "publisher": self.publisher,
+            "effective_date": self.effective_date,
+            "crawled_at": self.crawled_at,
         }
+
 
 
 @dataclass(frozen=True)

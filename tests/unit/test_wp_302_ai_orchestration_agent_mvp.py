@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from apps.api.ai.orchestrator.core import agent_graph
 from apps.api.ai.orchestrator.core.agent import (
+    OUT_OF_SCOPE_MESSAGE,
     direct_safety_node,
     grounding_verification_node,
     llm_node,
@@ -139,6 +140,79 @@ def test_tool_batch_cannot_exceed_remaining_budget(monkeypatch):
     result = llm_node(state, {"configurable": {"openai_api_key": "fake"}})
 
     assert "vượt quá giới hạn" in result["final_response"]
+    assert result["degradation_status"]["terminal_failure"] == "execution_budget_exhausted"
+
+
+def test_existing_search_observation_disables_another_search_tool_call(monkeypatch):
+    bound_choices = []
+
+    class FakeChatModel:
+        def bind_tools(self, tools, *, tool_choice=None):
+            bound_choices.append(tool_choice)
+            return self
+
+        def invoke(self, messages):
+            return AIMessage(content="BHYT được áp dụng theo quy định. [[chunk-1]]")
+
+    monkeypatch.setattr(
+        "apps.api.ai.orchestrator.core.agent.ChatOpenAI",
+        lambda **kwargs: FakeChatModel(),
+    )
+    state = {
+        "messages": [HumanMessage(content="Bệnh viện có áp dụng BHYT không?")],
+        "observations": [{"candidates": [{"chunk_id": "chunk-1"}]}],
+        "call_fingerprints": ["search_hospital_information_tool:{'query': 'BHYT'}"],
+        "max_tool_calls": 5,
+        "call_count": 1,
+        "elapsed_time_seconds": 0.0,
+        "deadline_timestamp": time.time() + 30,
+        "repair_attempted": False,
+    }
+
+    result = llm_node(state, {"configurable": {"openai_api_key": "fake"}})
+
+    assert bound_choices == ["none"]
+    assert result["messages"][-1].tool_calls == []
+    assert "[[chunk-1]]" in result["messages"][-1].content
+
+
+def test_out_of_scope_refusal_is_accepted_without_search_or_citation(monkeypatch):
+    bound_choices = []
+
+    class FakeChatModel:
+        def bind_tools(self, tools, *, tool_choice=None):
+            bound_choices.append(tool_choice)
+            return self
+
+        def invoke(self, messages):
+            return AIMessage(content=OUT_OF_SCOPE_MESSAGE)
+
+    monkeypatch.setattr(
+        "apps.api.ai.orchestrator.core.agent.ChatOpenAI",
+        lambda **kwargs: FakeChatModel(),
+    )
+    state = {
+        "messages": [HumanMessage(content="Viết chương trình Python sắp xếp danh sách")],
+        "observations": [],
+        "call_fingerprints": [],
+        "max_tool_calls": 5,
+        "call_count": 0,
+        "elapsed_time_seconds": 0.0,
+        "deadline_timestamp": time.time() + 30,
+        "repair_attempted": False,
+    }
+
+    llm_result = llm_node(state, {"configurable": {"openai_api_key": "fake"}})
+    verification_result = grounding_verification_node(
+        {**state, **llm_result},
+        {"configurable": {"thread_id": "scope-test"}},
+    )
+
+    assert bound_choices == [None]
+    assert llm_result["messages"][-1].tool_calls == []
+    assert verification_result["final_response"] == OUT_OF_SCOPE_MESSAGE
+    assert verification_result["citations"] == []
+    assert verification_result["degradation_status"]["scope_refused"] is True
 
 
 def test_new_turn_clears_previous_search_and_grounding_state():

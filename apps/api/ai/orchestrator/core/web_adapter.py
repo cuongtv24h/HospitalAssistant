@@ -7,10 +7,10 @@ import time
 import json
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, List
 
 import psycopg
+from apps.api.foundation.knowledge.ingestion.persistence.postgres import psycopg_connection_url
 from langchain_core.messages import HumanMessage
 
 from apps.api.ai.orchestrator.core.agent import agent_graph
@@ -24,6 +24,15 @@ from apps.api.foundation.appointments.tools.service import (
 from apps.api.foundation.operational_repository import OperationalRepository
 from apps.api.foundation.session.service import SessionService
 from apps.api.ai.providers.llm_provider import get_agent_llm_configs
+from packages.contracts import (
+    AI_PROVIDER_UNAVAILABLE,
+    CATEGORY_AI,
+    CATEGORY_SAFETY,
+    CATEGORY_TOOL,
+    OUT_OF_SCOPE,
+    TOOL_TIMEOUT,
+    make_error_envelope,
+)
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -141,7 +150,9 @@ class AgentInformationAssistanceAdapter:
         )
 
         database_started_at = time.monotonic()
-        with psycopg.connect(os.environ["DATABASE_URL"]) as connection:
+        with psycopg.connect(
+            psycopg_connection_url(os.environ["DATABASE_URL"]), prepare_threshold=None
+        ) as connection:
             with connection.cursor() as cursor:
                 logger.info("agent_trace %s", json.dumps({
                     "event": "database.connected",
@@ -155,6 +166,8 @@ class AgentInformationAssistanceAdapter:
         answer = state.get("final_response") or "Tôi không có đủ thông tin để trả lời câu hỏi này."
         booking_result = state.get("booking_result") or {}
         current_action = state.get("current_action")
+        terminal_failure = (state.get("degradation_status") or {}).get("terminal_failure")
+        scope_refused = bool((state.get("degradation_status") or {}).get("scope_refused"))
         active_booking_turn = bool(state.get("booking_step")) and current_action in {
             "start_booking", "advance_booking", "clarify"
         }
@@ -162,33 +175,72 @@ class AgentInformationAssistanceAdapter:
             outcome = "emergency_rerouted"
         elif risk == "CAUTION":
             outcome = "clarification_required"
+        elif scope_refused:
+            outcome = "refused"
         elif booking_result or active_booking_turn:
             outcome = "appointment_pending" if booking_result.get("appointment") else "booking_in_progress"
-        elif answer == "Tôi không có đủ thông tin để trả lời câu hỏi này.":
+        elif terminal_failure or answer == "Tôi không có đủ thông tin để trả lời câu hỏi này.":
             outcome = "fallback"
         else:
             outcome = "answered"
 
+        is_booking = bool(booking_result) or active_booking_turn
         citations = []
         seen = set()
-        for citation in state.get("citations", []):
-            source_id = str(citation.get("source_id") or citation.get("chunk_id") or "")
-            if not source_id or source_id in seen:
-                continue
-            seen.add(source_id)
-            source_path = str(citation.get("source_path") or "")
-            citations.append(
-                {
-                    "source_id": source_id,
-                    "title": Path(source_path).name or source_id,
-                    "source_type": "hospital_knowledge",
-                    "excerpt": citation.get("matched_text") or "",
-                    "version": citation.get("version") or "",
+        if not is_booking:
+            for citation in state.get("citations", []):
+                sid = str(citation.get("source_id") or "")
+                if not sid or sid in seen:
+                    continue
+                seen.add(sid)
+
+                kind = citation.get("source_kind") or ("web" if citation.get("url") or citation.get("source_url") else "document")
+                title = citation.get("title") or citation.get("display_name") or sid
+                display_name = citation.get("display_name") or title
+                url = citation.get("url") or citation.get("source_url")
+                if url and not (str(url).startswith("http://") or str(url).startswith("https://")):
+                    url = None
+
+                item = {
+                    "source_id": sid,
+                    "source_kind": kind,
+                    "title": title,
+                    "display_name": display_name,
+                    "excerpt": citation.get("matched_text") or citation.get("excerpt") or "",
+                    "version": citation.get("version") or "1.0",
+                    "publisher": citation.get("publisher") or "Bệnh viện Tim Hà Nội",
+                    "effective_date": citation.get("effective_date"),
+                    "crawled_at": citation.get("crawled_at"),
                 }
-            )
+                if kind == "web" and url:
+                    item["url"] = url
+                elif kind == "document":
+                    item["url"] = None
+
+                citations.append(item)
+
 
         grounded = bool(citations)
-        is_booking = bool(booking_result) or active_booking_turn
+        error = None
+        if scope_refused:
+            error = make_error_envelope(
+                code=OUT_OF_SCOPE,
+                message="Request is outside the supported Bệnh viện Tim Hà Nội scope",
+                category=CATEGORY_SAFETY,
+                trace_id=request.session_id,
+                retryable=False,
+                fallback=answer,
+            ).to_dict()
+        elif terminal_failure:
+            provider_failure = terminal_failure == "providers_exhausted"
+            error = make_error_envelope(
+                code=AI_PROVIDER_UNAVAILABLE if provider_failure else TOOL_TIMEOUT,
+                message=terminal_failure,
+                category=CATEGORY_AI if provider_failure else CATEGORY_TOOL,
+                trace_id=request.session_id,
+                retryable=True,
+                fallback=answer,
+            ).to_dict()
         response = AgentInformationResponse(
             {
                 "outcome": outcome,
@@ -216,8 +268,9 @@ class AgentInformationAssistanceAdapter:
                     "grounded": grounded,
                     "confidence": "high" if grounded else "low",
                     "source_count": len(citations),
+                    **({"fallback_reason": terminal_failure} if terminal_failure else {}),
                 },
-                "error": None,
+                "error": error,
             }
         )
         logger.info("agent_trace %s", json.dumps({

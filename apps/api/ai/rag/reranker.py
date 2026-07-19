@@ -2,6 +2,7 @@
 import os
 import requests
 import time
+from dataclasses import replace
 from functools import lru_cache
 from typing import List, Tuple, Optional
 from packages.contracts.dto import SearchCandidateDTO
@@ -25,19 +26,7 @@ def _load_bge_model(model_name: str, device: Optional[str]):
 
 
 def _with_score(candidate: SearchCandidateDTO, score: float) -> SearchCandidateDTO:
-    return SearchCandidateDTO(
-        chunk_id=candidate.chunk_id,
-        content=candidate.content,
-        score=score,
-        domain=candidate.domain,
-        sub_topic=candidate.sub_topic,
-        source_id=candidate.source_id,
-        source_path=candidate.source_path,
-        version=candidate.version,
-        vector_rank=candidate.vector_rank,
-        lexical_rank=candidate.lexical_rank,
-        fused_rank=candidate.fused_rank,
-    )
+    return replace(candidate, score=score)
 
 
 def _rerank_with_bge(

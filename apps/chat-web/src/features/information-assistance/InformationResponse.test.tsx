@@ -89,6 +89,33 @@ describe('InformationResponse', () => {
     expect(screen.queryByLabelText('Suggested actions')).not.toBeInTheDocument()
   })
 
+  it('renders an out-of-scope refusal as only the assistant message', () => {
+    const message = 'Xin lỗi, tôi chỉ hỗ trợ đặt lịch khám và thông tin chính thức về khám chữa bệnh, BHYT, giá dịch vụ, giờ làm việc, bác sĩ và chuyên khoa tại Bệnh viện Tim Hà Nội.'
+    render(
+      <InformationResponse
+        response={{
+          outcome: 'refused',
+          message,
+          citations: [],
+          suggested_actions: [],
+          explainability: { grounded: false, confidence: 'low', source_count: 0 },
+          error: {
+            trace_id: 'scope-refusal',
+            error: { code: 'OUT_OF_SCOPE', category: 'safety' },
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByLabelText('Answer content')).toHaveTextContent(message)
+    expect(screen.queryByLabelText('Response outcome')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Citations')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Suggested actions')).not.toBeInTheDocument()
+    expect(screen.queryByText('Nguồn tham khảo')).not.toBeInTheDocument()
+    expect(screen.queryByText('Không có nguồn chính thức được đính kèm.')).not.toBeInTheDocument()
+  })
+
   it('renders model markdown with line breaks, emphasis, and lists', () => {
     render(
       <InformationResponse
@@ -140,6 +167,66 @@ describe('InformationResponse', () => {
 
     expect(screen.queryByLabelText('Suggested actions')).not.toBeInTheDocument()
     expect(screen.queryByText('Hành động tiếp theo')).not.toBeInTheDocument()
+  })
+
+  it('renders the 22 web-source citation shape as safe links in stable order', () => {
+    const citations = Array.from({ length: 22 }, (_, index) => ({
+      source_id: `HHH-WEB-${String(index + 1).padStart(3, '0')}`,
+      source_kind: 'web',
+      title: `Nguồn web ${index + 1}`,
+      url: `https://benhvientimhanoi.vn/nguon-${index + 1}`,
+    }))
+    render(<InformationResponse response={{ outcome: 'answered', message: 'Thông tin.', citations, suggested_actions: [] }} />)
+    const links = within(screen.getByLabelText('Citations')).getAllByRole('link')
+    expect(links).toHaveLength(22)
+    expect(links[0]).toHaveTextContent('Nguồn web 1')
+    expect(links[21]).toHaveTextContent('Nguồn web 22')
+  })
+
+  it('renders all approved local PDF labels as plain text', () => {
+    const labels = [
+      'Bảng giá dịch vụ kỹ thuật.pdf',
+      'Quy trình đón tiếp bệnh nhân.pdf',
+      'Biểu giá BHYT.pdf',
+    ]
+    render(<InformationResponse response={{
+      outcome: 'answered',
+      message: 'Thông tin.',
+      citations: labels.map((label, index) => ({ source_id: `SRC-DOC-${index}`, source_kind: 'document', title: label, display_name: label })),
+      suggested_actions: [],
+    }} />)
+    const section = screen.getByLabelText('Citations')
+    labels.forEach((label) => expect(within(section).getByText(label).tagName).toBe('SPAN'))
+    expect(within(section).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('deduplicates citations by source_id and rejects unsafe links', () => {
+    render(<InformationResponse response={{
+      outcome: 'answered',
+      message: 'Thông tin.',
+      citations: [
+        { source_id: 'HHH-GEN-001', title: 'Nguồn chính', url: 'javascript:alert(1)' },
+        { source_id: 'HHH-GEN-001', title: 'Nguồn trùng', url: 'https://benhvientimhanoi.vn/trung' },
+      ],
+      suggested_actions: [],
+    }} />)
+    const section = screen.getByLabelText('Citations')
+    expect(within(section).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(section).getByText('Nguồn chính').tagName).toBe('SPAN')
+    expect(within(section).queryByRole('link')).not.toBeInTheDocument()
+    expect(within(section).queryByText('Nguồn trùng')).not.toBeInTheDocument()
+  })
+
+  it('suppresses the citation panel throughout booking human-in-the-loop responses', () => {
+    render(<InformationResponse response={{
+      outcome: 'booking_in_progress',
+      message: 'Vui lòng xác nhận thông tin đặt lịch.',
+      citations: [{ source_id: 'UNRELATED', title: 'Không liên quan', url: 'https://example.com' }],
+      suggested_actions: [{ action_id: 'confirm', type: 'confirm_booking', label: 'Xác nhận đặt lịch' }],
+      conversation_state: { mode: 'booking' },
+    }} />)
+    expect(screen.queryByLabelText('Citations')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Xác nhận đặt lịch' })).toBeInTheDocument()
   })
 })
 // === TASK:WP-502:END ===

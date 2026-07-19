@@ -1,4 +1,5 @@
 # === TASK:WP-201:START ===
+from dataclasses import replace
 from typing import List
 from packages.contracts.dto import SearchCandidateDTO
 
@@ -35,15 +36,9 @@ def reciprocal_rank_fusion(
     fused = []
     for fused_rank, cid in enumerate(sorted_ids, start=1):
         base = candidates_by_id[cid]
-        fused.append(SearchCandidateDTO(
-            chunk_id=base.chunk_id,
-            content=base.content,
+        fused.append(replace(
+            base,
             score=scores[cid],
-            domain=base.domain,
-            sub_topic=base.sub_topic,
-            source_id=base.source_id,
-            source_path=base.source_path,
-            version=base.version,
             vector_rank=vector_ranks.get(cid),
             lexical_rank=lexical_ranks.get(cid),
             fused_rank=fused_rank

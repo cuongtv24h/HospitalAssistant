@@ -43,6 +43,10 @@ from apps.api.ai.orchestrator.appointment_booking.pipeline import (
 
 ROOT = Path(__file__).resolve().parents[5]
 BUDGET_EXHAUSTED_MESSAGE = "Xin lỗi, thời gian thực thi của tác vụ đã vượt quá giới hạn cho phép."
+OUT_OF_SCOPE_MESSAGE = (
+    "Xin lỗi, tôi chỉ hỗ trợ đặt lịch khám và thông tin chính thức về khám chữa bệnh, "
+    "BHYT, giá dịch vụ, giờ làm việc, bác sĩ và chuyên khoa tại Bệnh viện Tim Hà Nội."
+)
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -582,13 +586,18 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
         fallback = BUDGET_EXHAUSTED_MESSAGE
         return {
             "final_response": fallback,
-            "messages": state.get("messages", []) + [AIMessage(content=fallback)]
+            "messages": state.get("messages", []) + [AIMessage(content=fallback)],
+            "degradation_status": {
+                **state.get("degradation_status", {}),
+                "terminal_failure": "execution_budget_exhausted",
+            },
         }
 
     provider_config = config.get("configurable", {})
     action = classify_action(state)
     booking_step = state.get("booking_step")
     tools = _allowed_tools_for_action(action)
+    search_observation_ready = action == "search_knowledge" and bool(state.get("observations"))
 
     # System instruction prompt loaded from file
     prompt_path = ROOT / "config" / "prompts" / "hospital-agent.md"
@@ -608,6 +617,12 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
             "to extract only the field required by this step. If it is an informational interruption, "
             "use a read-only search/list/lookup tool and leave the booking draft and current step unchanged. "
             "If the user's meaning is ambiguous, ask one clarification and do not call a tool."
+        )))
+    if search_observation_ready:
+        input_msgs.append(SystemMessage(content=(
+            "The current turn already has a validated hospital knowledge search result. "
+            "Do not call search again. Answer only from the returned evidence and cite exact "
+            "chunk IDs as [[chunk_id]]."
         )))
 
     # If this is a repair attempt, append the repair prompt
@@ -653,14 +668,28 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
             llm_options["timeout"] = max(0.1, remaining)
         llm = ChatOpenAI(**llm_options)
         if tools:
-            forced_tool = tools[0].name if len(tools) == 1 and action != "read_operational_data" else None
-            if forced_tool:
+            if search_observation_ready:
+                # Keep the tool schema in the prompt while explicitly disabling
+                # another invocation. Without this guard, a single-tool action
+                # forces search on every graph loop and exhausts the tool budget.
                 try:
-                    llm_with_tools = llm.bind_tools(tools, tool_choice=forced_tool)
+                    llm_with_tools = llm.bind_tools(tools, tool_choice="none")
                 except TypeError:
                     llm_with_tools = llm.bind_tools(tools)
             else:
-                llm_with_tools = llm.bind_tools(tools)
+                forced_tool = (
+                    tools[0].name
+                    if len(tools) == 1
+                    and action not in {"read_operational_data", "search_knowledge"}
+                    else None
+                )
+                if forced_tool:
+                    try:
+                        llm_with_tools = llm.bind_tools(tools, tool_choice=forced_tool)
+                    except TypeError:
+                        llm_with_tools = llm.bind_tools(tools)
+                else:
+                    llm_with_tools = llm.bind_tools(tools)
         else:
             llm_with_tools = llm
         attempt_started_at = time.monotonic()
@@ -678,7 +707,23 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
             "final_response": fallback,
             "messages": state.get("messages", []) + [AIMessage(content=fallback)],
             "current_action": action,
+            "degradation_status": {
+                **state.get("degradation_status", {}),
+                "terminal_failure": "providers_exhausted",
+            },
         }
+    if search_observation_ready and response.tool_calls:
+        # Some OpenAI-compatible providers may ignore tool_choice="none". Do
+        # not execute another expensive retrieval; let grounding verification
+        # repair or abstain from the text response instead.
+        _trace(
+            config,
+            "action_policy.reject",
+            action=action,
+            rejected_tools=[call.get("name") for call in response.tool_calls],
+            reason="search_already_completed",
+        )
+        response = AIMessage(content=response.content or "")
     elapsed = state.get("elapsed_time_seconds", 0.0) + (time.monotonic() - started_at)
     allowed_tool_names = {candidate.name for candidate in tools}
     invalid_tool_calls = [
@@ -724,7 +769,11 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
             return {
                 "final_response": fallback,
                 "elapsed_time_seconds": elapsed,
-                "messages": state.get("messages", []) + [AIMessage(content=fallback)]
+                "messages": state.get("messages", []) + [AIMessage(content=fallback)],
+                "degradation_status": {
+                    **state.get("degradation_status", {}),
+                    "terminal_failure": "execution_budget_exhausted",
+                },
             }
         seen = state.get("call_fingerprints", [])
         new_fingerprints = []
@@ -734,7 +783,11 @@ def llm_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
                 fallback = "Xin lỗi, thời gian thực thi của tác vụ đã vượt quá giới hạn cho phép do vòng lặp."
                 return {
                     "final_response": fallback,
-                    "messages": state.get("messages", []) + [AIMessage(content=fallback)]
+                    "messages": state.get("messages", []) + [AIMessage(content=fallback)],
+                    "degradation_status": {
+                        **state.get("degradation_status", {}),
+                        "terminal_failure": "tool_loop_detected",
+                    },
                 }
             new_fingerprints.append(fingerprint)
 
@@ -780,7 +833,11 @@ def tool_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
                 "final_response": fallback,
                 "messages": state.get("messages", []) + [AIMessage(content=fallback)],
                 "observations": observations,
-                "call_count": call_count
+                "call_count": call_count,
+                "degradation_status": {
+                    **state.get("degradation_status", {}),
+                    "terminal_failure": "execution_budget_exhausted",
+                },
             }
         name = tc["name"]
         args = tc["args"]
@@ -896,6 +953,17 @@ def grounding_verification_node(state: AgentState, config: Optional[RunnableConf
     last_msg = state.get("messages", [])[-1]
     response_text = last_msg.content
 
+    if str(response_text).strip() == OUT_OF_SCOPE_MESSAGE:
+        _trace(config, "scope.refused", action=state.get("current_action"))
+        return {
+            "final_response": OUT_OF_SCOPE_MESSAGE,
+            "citations": [],
+            "degradation_status": {
+                **state.get("degradation_status", {}),
+                "scope_refused": True,
+            },
+        }
+
     if state.get("booking_result"):
         booking_result = state["booking_result"]
         appointment = booking_result.get("appointment") or {}
@@ -1003,7 +1071,17 @@ def grounding_verification_node(state: AgentState, config: Optional[RunnableConf
                 sub_topic=c_dict["sub_topic"],
                 source_id=c_dict["source_id"],
                 source_path=c_dict["source_path"],
-                version=c_dict["version"]
+                version=c_dict["version"],
+                source_kind=c_dict.get("source_kind", "web"),
+                title=c_dict.get("title", ""),
+                display_name=c_dict.get("display_name", ""),
+                source_url=c_dict.get("source_url"),
+                publisher=c_dict.get("publisher", "Bệnh viện Tim Hà Nội"),
+                section_path=c_dict.get("section_path", c_dict.get("sub_topic", "")),
+                crawled_at=c_dict.get("crawled_at"),
+                effective_date=c_dict.get("effective_date"),
+                corpus_release_id=c_dict.get("corpus_release_id", ""),
+                answerable=c_dict.get("answerable", True),
             ))
 
     grounded, citations = map_citations_to_response(response_text, candidates)

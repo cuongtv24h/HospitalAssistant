@@ -2,17 +2,23 @@
 import math
 from typing import List
 
-def generate_dry_run_report(result) -> str:
+def generate_dry_run_report(result, sources_processed=None, plan=None) -> str:
     """Produce a human-readable dry-run summary with detailed metrics."""
+    web_count = sum(1 for s in (sources_processed or []) if getattr(s, "source_kind", "") == "web")
+    doc_count = sum(1 for s in (sources_processed or []) if getattr(s, "source_kind", "") == "document")
+    inc_sources = sum(1 for s in (sources_processed or []) if getattr(s, "extraction_incomplete", False))
+
     lines = [
         "=" * 60,
-        "WP-008 — Seed Ingestion Dry-Run Report",
+        "Authoritative Knowledge Ingestion Dry-Run Report",
         "=" * 60,
-        f"  Total chunks processed : {result.total_chunks}",
-        f"  Answerable chunks      : {result.answerable_chunks}",
-        f"  Mock chunks            : {result.mock_chunks}",
-        f"  Approved-for-pilot     : {result.approved_chunks}",
-        f"  Errors                 : {len(result.errors)}",
+        f"  Total sources catalogued : {len(sources_processed or [])} (Web: {web_count}, Document: {doc_count})",
+        f"  Incomplete sources       : {inc_sources}",
+        f"  Total chunks generated   : {result.total_chunks}",
+        f"  Answerable chunks        : {result.answerable_chunks}",
+        f"  Non-answerable chunks    : {result.total_chunks - result.answerable_chunks}",
+        f"  Mock chunks              : {result.mock_chunks}",
+        f"  Errors                   : {len(result.errors)}",
         "-" * 60,
     ]
     
@@ -29,12 +35,7 @@ def generate_dry_run_report(result) -> str:
         t_min = tokens[0]
         t_max = tokens[-1]
         n = len(tokens)
-        if n % 2 == 1:
-            t_med = tokens[n // 2]
-        else:
-            t_med = (tokens[n // 2 - 1] + tokens[n // 2]) / 2.0
-            
-        # Find largest chunk
+        t_med = tokens[n // 2] if n % 2 == 1 else (tokens[n // 2 - 1] + tokens[n // 2]) / 2.0
         largest_rec = max(result.chunk_records, key=lambda r: r.token_count, default=None)
         
         lines.extend([
@@ -45,37 +46,47 @@ def generate_dry_run_report(result) -> str:
             f"    Largest chunk ID     : {largest_rec.chunk_id if largest_rec else 'N/A'}",
             "-" * 60,
         ])
-    
-    # Calculate domain and source summaries
-    domains = {}
-    sources = {}
+
+    # Split reasons and Quality Flags
+    split_reasons = {}
+    quality_flags_count = {}
+    per_source_chunks = {}
+
     for rec in result.chunk_records:
-        domains[rec.domain] = domains.get(rec.domain, 0) + 1
-        sources[rec.source_id] = sources.get(rec.source_id, 0) + 1
-        
-    lines.append("  Domain summary:")
-    for dom, count in sorted(domains.items()):
-        lines.append(f"    - {dom:<20} : {count} chunks")
-        
-    lines.append("  Source summary:")
-    for src, count in sorted(sources.items()):
+        reason = getattr(rec, "split_reason", "unknown")
+        split_reasons[reason] = split_reasons.get(reason, 0) + 1
+        for flag in getattr(rec, "quality_flags", []):
+            quality_flags_count[flag] = quality_flags_count.get(flag, 0) + 1
+        per_source_chunks[rec.source_id] = per_source_chunks.get(rec.source_id, 0) + 1
+
+    lines.append("  Split Reasons:")
+    for rsn, count in sorted(split_reasons.items()):
+        lines.append(f"    - {rsn:<20} : {count} chunks")
+
+    lines.append("  Quality Flags:")
+    if quality_flags_count:
+        for flg, count in sorted(quality_flags_count.items()):
+            lines.append(f"    - {flg:<20} : {count} chunks")
+    else:
+        lines.append("    - (None)")
+
+    lines.append("-" * 60)
+    lines.append("  Per-Source Chunk Counts:")
+    for src, count in sorted(per_source_chunks.items()):
         lines.append(f"    - {src:<20} : {count} chunks")
     lines.append("-" * 60)
 
-    lines.append("  Chunk summary:")
-    for rec in result.chunk_records:
-        lines.append(
-            "    %-20s | %-20s | answerable=%-5s | mock=%-5s | uuid=%s | hash=%s | tokens=%d"
-            % (
-                rec.chunk_id,
-                rec.domain,
-                str(rec.answerable),
-                str(rec.is_mock),
-                rec.persistence_uuid,
-                rec.content_hash,
-                rec.token_count,
-            )
-        )
+    if plan:
+        lines.extend([
+            "  Planned Database Operations:",
+            f"    To Insert            : {len(plan.to_insert)}",
+            f"    To Update            : {len(plan.to_update)}",
+            f"    To Skip              : {len(plan.to_skip)}",
+            f"    To Retire (Legacy)   : {len(plan.to_retire)}",
+            "-" * 60,
+        ])
+
     lines.append("=" * 60)
     return "\n".join(lines)
+
 # === TASK:WP-008:END ===

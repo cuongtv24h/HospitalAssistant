@@ -133,8 +133,16 @@ def _validate_citations(
                 source_page="",
                 version=candidate.version,
                 matched_text=claim,
+                source_kind=candidate.source_kind,
+                title=candidate.title,
+                display_name=candidate.display_name,
+                url=candidate.source_url,
+                publisher=candidate.publisher,
+                effective_date=candidate.effective_date,
+                crawled_at=candidate.crawled_at,
             ))
         supported_lines.append(line)
+
 
     return all_grounded, citations, issues, supported_lines
 

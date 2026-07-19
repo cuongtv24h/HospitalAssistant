@@ -1,28 +1,27 @@
 # === TASK:WP-008:START ===
 import re
-from ..settings import HARD_MAX_TOKENS, TARGET_MIN_TOKENS, TARGET_MAX_TOKENS, PROSE_OVERLAP_TOKENS, CHAR_CEILING
+from functools import lru_cache
+
+TOKENIZER_ID = "cl100k_base"
 
 class TokenCounter:
-    """Deterministic token counter based on Unicode words and punctuation marks."""
+    """Pinned token counter using tiktoken cl100k_base with conservative fallback."""
 
-    def __init__(
-        self,
-        target_min: int = TARGET_MIN_TOKENS,
-        target_max: int = TARGET_MAX_TOKENS,
-        hard_max: int = HARD_MAX_TOKENS,
-        overlap_max: int = PROSE_OVERLAP_TOKENS,
-        char_ceiling: int = CHAR_CEILING
-    ):
-        self.target_min = target_min
-        self.target_max = target_max
-        self.hard_max = hard_max
-        self.overlap_max = overlap_max
-        self.char_ceiling = char_ceiling
+    def __init__(self, encoding_name: str = TOKENIZER_ID):
+        self.encoding_name = encoding_name
+        try:
+            import tiktoken
+            self._encoding = tiktoken.get_encoding(encoding_name)
+        except Exception:
+            self._encoding = None
+        self.effective_id = encoding_name if self._encoding is not None else "unicode-regex-v1"
 
+    @lru_cache(maxsize=16384)
     def count(self, text: str) -> int:
         if not text:
             return 0
-        # Split on word boundaries or individual punctuation marks, ignoring whitespace
-        tokens = re.findall(r'\w+|[^\w\s]', text, re.UNICODE)
-        return len(tokens)
+        if self._encoding is not None:
+            return len(self._encoding.encode(text, disallowed_special=()))
+        pieces = re.findall(r"\w+|[^\w\s]", text, flags=re.UNICODE)
+        return max(1, int(len(pieces) * 1.35))
 # === TASK:WP-008:END ===

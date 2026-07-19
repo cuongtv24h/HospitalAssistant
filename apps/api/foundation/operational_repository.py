@@ -9,18 +9,25 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
+from apps.api.foundation.knowledge.ingestion.persistence.postgres import psycopg_connection_url
+
 
 class OperationalRepository:
     def __init__(self, database_url):
         if not database_url:
             raise ValueError("DATABASE_URL is required for operational persistence")
-        self._database_url = database_url
+        self._database_url = psycopg_connection_url(database_url)
 
     @contextmanager
     def _cursor(self):
         import psycopg
         from psycopg.rows import dict_row
-        with psycopg.connect(self._database_url, row_factory=dict_row, connect_timeout=5) as connection:
+        with psycopg.connect(
+            self._database_url,
+            row_factory=dict_row,
+            connect_timeout=5,
+            prepare_threshold=None,
+        ) as connection:
             with connection.cursor() as cursor:
                 yield cursor
             connection.commit()
