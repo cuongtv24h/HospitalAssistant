@@ -8,9 +8,11 @@ provider calls and database connections are added by later work packages.
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
 from apps.api.core.settings import Settings
@@ -45,6 +47,52 @@ from apps.api.gateway.admin.router import router as admin_router
 from apps.api.gateway.foundation.appointments_router import router as foundation_appointments_router
 
 logger = logging.getLogger(__name__)
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+_CHAT_FRONTEND_DIST = _REPOSITORY_ROOT / "apps" / "chat-web" / "dist"
+_ADMIN_FRONTEND_DIST = _REPOSITORY_ROOT / "apps" / "admin-web" / "dist"
+_STATIC_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+_SPA_CACHE_CONTROL = "no-cache"
+_API_PATH_PREFIXES = ("api", "v1")
+
+
+def _static_file_or_none(build_dir: Path, asset_path: str) -> Path | None:
+    """Resolve a static asset path only when it stays inside build_dir."""
+    if not build_dir.is_dir():
+        return None
+
+    candidate = (build_dir / asset_path).resolve()
+    build_root = build_dir.resolve()
+    try:
+        candidate.relative_to(build_root)
+    except ValueError:
+        return None
+
+    if not candidate.is_file():
+        return None
+    return candidate
+
+
+def _spa_response(build_dir: Path, asset_path: str) -> FileResponse:
+    """Serve a Vite static asset or fall back to index.html for SPA routes."""
+    if not build_dir.is_dir():
+        logger.warning("Frontend build directory is missing: %s", build_dir)
+        raise HTTPException(status_code=503, detail="Frontend build is not available")
+
+    static_file = _static_file_or_none(build_dir, asset_path)
+    if static_file is not None:
+        return FileResponse(
+            static_file,
+            headers={"Cache-Control": _STATIC_ASSET_CACHE_CONTROL},
+        )
+
+    index_file = build_dir / "index.html"
+    if not index_file.is_file():
+        logger.warning("Frontend index.html is missing: %s", index_file)
+        raise HTTPException(status_code=503, detail="Frontend build is not available")
+
+    return FileResponse(index_file, headers={"Cache-Control": _SPA_CACHE_CONTROL})
+
 
 # Local development only; deployment environments keep using their injected
 # environment variables. Existing environment values are never overwritten.
@@ -117,4 +165,20 @@ app.include_router(appointment_booking_router)
 app.include_router(appointment_status_router)
 app.include_router(admin_router)
 app.include_router(foundation_appointments_router)
+
+
+@app.get("/admin", include_in_schema=False)
+@app.get("/admin/{asset_path:path}", include_in_schema=False)
+def serve_admin_frontend(asset_path: str = ""):
+    """Serve the admin SPA without intercepting API routes."""
+    return _spa_response(_ADMIN_FRONTEND_DIST, asset_path)
+
+
+@app.get("/{asset_path:path}", include_in_schema=False)
+def serve_chat_frontend(asset_path: str = ""):
+    """Serve the chat SPA for non-API paths after all API routes are registered."""
+    first_segment = asset_path.split("/", 1)[0]
+    if first_segment in _API_PATH_PREFIXES:
+        raise HTTPException(status_code=404, detail="Not Found")
+    return _spa_response(_CHAT_FRONTEND_DIST, asset_path)
 # === TASK:WP-010:END ===

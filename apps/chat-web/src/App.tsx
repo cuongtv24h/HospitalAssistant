@@ -43,7 +43,6 @@ const quickActions = [
 const onboardingMessages = [
   'Xin chào! Tôi là trợ lý AI của Bệnh viện Tim Hà Nội.',
   'Bạn đang cần tôi hỗ trợ về vấn đề gì?',
-  'Bạn có thể chọn một trong các mục dưới đây hoặc nhập câu hỏi bằng ngôn ngữ tự nhiên để được tư vấn.',
 ] as const
 
 function App() {
